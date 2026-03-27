@@ -10,19 +10,25 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           
       - name: Install Dependencies
         run: npm install
         
-      - name: Generate wrangler.toml
+      - name: Build Deployment Assets
         run: |
+          # 1. Prepare common variables
+          DOMAIN="${{ secrets.WORKER_DOMAIN }}"
+          # shellcheck disable=SC2001
+          ESCAPED_DOMAIN=$(echo "$DOMAIN" | sed 's/\./\\./g')
+          
+          # 2. Generate wrangler.toml
           cat <<EOF > wrangler.toml
           name = "cloud-image-worker"
           main = "src/index.ts"
@@ -32,18 +38,17 @@ jobs:
           GH_USER = "${{ secrets.GH_USER }}"
           GH_REPO = "${{ secrets.GH_REPO }}"
           IMAGE_DOMAIN = "${{ secrets.IMAGE_DOMAIN }}"
-          WORKER_DOMAIN = "${{ secrets.WORKER_DOMAIN }}"
+          WORKER_DOMAIN = "$DOMAIN"
 
           [[routes]]
-          pattern = "${{ secrets.WORKER_DOMAIN }}"
+          pattern = "$DOMAIN"
           custom_domain = true
           
           [assets]
           directory = "./public"
           EOF
 
-      - name: Generate Surge Module Asset
-        run: |
+          # 3. Generate Surge module in public/
           mkdir -p public
           cat <<EOF > public/surge.sgmodule
           #!name=Cloud Image Worker Auth
@@ -52,10 +57,10 @@ jobs:
           #!arguments=Auth:鉴权Token
 
           [Header Rewrite]
-          ^https?://${{ secrets.WORKER_DOMAIN }}/api/convert header-add X-Worker-Auth {{{Auth}}}
+          ^https?://$ESCAPED_DOMAIN/api/convert header-add X-Worker-Auth {{{Auth}}}
 
           [MITM]
-          hostname = %APPEND% ${{ secrets.WORKER_DOMAIN }}
+          hostname = %APPEND% $DOMAIN
           EOF
 
       - name: Deploy to Cloudflare

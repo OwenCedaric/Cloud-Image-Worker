@@ -10,6 +10,9 @@
     "author": "",
     "license": "ISC",
     "type": "commonjs",
+    "engines": {
+        "node": ">=24.0.0"
+    },
     "dependencies": {
         "@cloudflare/workers-types": "^4.20260317.1",
         "hono": "^4.12.9",
