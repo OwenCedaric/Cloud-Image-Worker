@@ -1,0 +1,75 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm install
+        
+      - name: Generate wrangler.toml
+        run: |
+          cat <<EOF > wrangler.toml
+          name = "cloud-image-worker"
+          main = "src/index.ts"
+          compatibility_date = "2024-03-24"
+
+          [vars]
+          GH_USER = "${{ secrets.GH_USER }}"
+          GH_REPO = "${{ secrets.GH_REPO }}"
+          IMAGE_DOMAIN = "${{ secrets.IMAGE_DOMAIN }}"
+          WORKER_DOMAIN = "${{ secrets.WORKER_DOMAIN }}"
+
+          [[routes]]
+          pattern = "${{ secrets.WORKER_DOMAIN }}"
+          custom_domain = true
+          
+          [assets]
+          directory = "./public"
+          EOF
+
+      - name: Generate Surge Module Asset
+        run: |
+          mkdir -p public
+          cat <<EOF > public/surge.sgmodule
+          #!name=Cloud Image Worker Auth
+          #!desc=自动注入 Cloud-Image-Worker API 验证所需的 X-Worker-Auth Header
+          #!category=Cloud-Image-Worker
+          #!arguments=Auth:鉴权Token
+
+          [Header Rewrite]
+          ^https?://${{ secrets.WORKER_DOMAIN }}/api/convert header-add X-Worker-Auth {{{Auth}}}
+
+          [MITM]
+          hostname = %APPEND% ${{ secrets.WORKER_DOMAIN }}
+          EOF
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          secrets: |
+            GH_TOKEN
+            TG_BOT_TOKEN
+            AUTH_TOKEN
+            TG_ALLOWED_USERS
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
+          TG_ALLOWED_USERS: ${{ secrets.TG_ALLOWED_USERS }}

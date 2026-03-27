@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Image Worker | Minimalist Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: {{BG}};
+            --surface: {{WHITE}};
+            --text: {{BLACK}};
+            --accent: {{ACCENT}};
+            --subtle: {{SLATE}};
+            --border: #E2E8F0;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg); 
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 720px;
+            background: var(--surface);
+            padding: 3rem;
+            border-radius: var(--radius);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        header {
+            margin-bottom: 2.5rem;
+            text-align: center;
+        }
+        .logo {
+            font-weight: 800;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--subtle);
+            margin-bottom: 1rem;
+            display: block;
+        }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+        }
+        p.subtitle {
+            color: var(--subtle);
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        /* Form area */
+        .input-group {
+            margin-bottom: 2rem;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+        }
+        textarea {
+            width: 100%;
+            min-height: 160px;
+            padding: 1.25rem;
+            font-family: inherit;
+            font-size: 1rem;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius);
+            outline: none;
+            resize: vertical;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            background: #FAFAFA;
+        }
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.03);
+            background: var(--surface);
+        }
+        
+        button {
+            width: 100%;
+            background: var(--accent);
+            color: var(--surface);
+            border: none;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        button:hover { opacity: 0.9; }
+        button:active { transform: scale(0.98); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Results */
+        .results-area {
+            display: none;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .results-header h2 { font-size: 1.25rem; font-weight: 700; }
+        
+        .result-list { list-style: none; display: flex; flex-direction: column; gap: 0.75rem; }
+        .result-item {
+            padding: 1rem;
+            background: #F8FAFC;
+            border: 1px solid var(--border);
+            border-radius: calc(var(--radius) - 4px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        .result-item a {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9375rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .result-item a:hover { color: var(--subtle); }
+
+        .btn-inline {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
+            width: auto;
+            border-radius: 6px;
+        }
+        .btn-inline:hover { background: #F1F5F9; }
+
+        #status {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--subtle);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            .container { padding: 2rem 1.5rem; }
+            h1 { font-size: 1.75rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <span class="logo">Cloud-Image-Worker</span>
+            <h1>Image Processor</h1>
+            <p class="subtitle">Convert any image to AVIF instantly.</p>
+        </header>
+
+        <main>
+            <div class="input-group">
+                <label for="urls">Batch Processing</label>
+                <textarea id="urls" placeholder="Paste image URLs (one per line)..."></textarea>
+            </div>
+            
+            <button id="convertBtn" onclick="processBatch()">
+                <span>Convert Links</span>
+            </button>
+            <div id="status"></div>
+
+            <section class="results-area" id="resultsArea">
+                <div class="results-header">
+                    <h2>Generated Links</h2>
+                    <button class="btn-inline" onclick="copyAll()">Copy All</button>
+                </div>
+                <div class="result-list" id="resultList"></div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const urlsEl = document.getElementById('urls');
+        const convertBtn = document.getElementById('convertBtn');
+        const resultsArea = document.getElementById('resultsArea');
+        const resultList = document.getElementById('resultList');
+
+        async function processBatch() {
+            const lines = urlsEl.value.split('\n').map(l => l.trim()).filter(l => l !== '');
+            if (lines.length === 0) return;
+
+            convertBtn.disabled = true;
+            statusEl.innerText = 'Converting images...';
+            resultList.innerHTML = '';
+            resultsArea.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls: lines })
+                });
+
+                if (res.status === 401) throw new Error('Unauthorized');
+                const data = await res.json();
+                
+                if (data.results && Object.keys(data.results).length > 0) {
+                    statusEl.innerText = '';
+                    Object.entries(data.results).forEach(([input, output]) => {
+                        const item = document.createElement('div');
+                        item.className = 'result-item';
+                        const isError = output.startsWith('Error:');
+                        item.innerHTML = `
+                            <div style="flex: 1; overflow: hidden;">
+                                <div style="font-size: 0.75rem; color: var(--subtle); margin-bottom: 0.2rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${input}</div>
+                                ${isError ? `<span style="color: #EF4444; font-size: 0.875rem;">${output}</span>` : `<a href="${output}" target="_blank">${output}</a>`}
+                            </div>
+                            <button class="btn-inline" ${isError ? 'disabled' : ''} onclick="copyText('${output}')">Copy</button>
+                        `;
+                        resultList.appendChild(item);
+                    });
+                    resultsArea.style.display = 'block';
+                }
+ else {
+                    throw new Error(data.error || 'Conversion failed');
+                }
+            } catch (e) {
+                statusEl.innerText = 'Error: ' + e.message;
+            } finally {
+                convertBtn.disabled = false;
+            }
+        }
+
+        function copyText(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                const originalText = btn.innerText;
+                btn.innerText = 'Copied';
+                setTimeout(() => btn.innerText = originalText, 1500);
+            });
+        }
+
+        function copyAll() {
+            const links = Array.from(resultList.querySelectorAll('a')).map(a => a.href).join('\n');
+            navigator.clipboard.writeText(links).then(() => {
+                const btn = event.target;
+                const originalText = btn.innerText;
+                btn.innerText = 'All Copied';
+                setTimeout(() => btn.innerText = originalText, 1500);
+            });
+        }
+    </script>
+</body>
+</html>
