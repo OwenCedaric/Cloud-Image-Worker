@@ -22,6 +22,9 @@ const MINIMAL_ASSETS = {
     },
 };
 
+// Helper: Sleep
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 // Helper to render Bauhaus UI
@@ -55,8 +58,25 @@ function isTelegramUserAllowed(userId: number | undefined, env: Bindings): boole
     return allowedIds.includes(String(userId))
 }
 
+// Helper: Get extension from Content-Type
+function getExtensionFromContentType(contentType: string | null): string {
+    if (!contentType) return '.bin'
+    const type = contentType.split(';')[0].trim().toLowerCase()
+    const map: Record<string, string> = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+        'image/avif': '.avif',
+        'image/svg+xml': '.svg',
+        'image/x-icon': '.ico',
+        'image/bmp': '.bmp'
+    }
+    return map[type] || '.bin'
+}
+
 // Helper to push to GitHub
-async function pushToGitHub(filename: string, content: ArrayBuffer, env: Bindings) {
+async function pushToGitHub(filename: string, content: ArrayBuffer, env: Bindings, commitMessage: string) {
     const base64 = arrayBufferToBase64(content)
     const url = `https://api.github.com/repos/${env.GH_USER}/${env.GH_REPO}/contents/${filename}`
 
@@ -69,7 +89,7 @@ async function pushToGitHub(filename: string, content: ArrayBuffer, env: Binding
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            message: `Upload ${filename}`,
+            message: commitMessage,
             content: base64
         })
     })
@@ -81,12 +101,14 @@ async function pushToGitHub(filename: string, content: ArrayBuffer, env: Binding
 }
 
 // Image processing logic
-async function processImage(imgUrl: string, env: Bindings) {
+async function processImage(imgUrl: string, env: Bindings, isSkipCi: boolean = false) {
     const response = await fetch(imgUrl, {
         headers: { 'User-Agent': 'Cloudflare-Worker-Image-Processor' }
     })
 
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`)
+
+    const originalContentType = response.headers.get('Content-Type')
 
     // Convert to AVIF using Cloudflare Image Resizing (Requires Paid Plan)
     const avifResponse = await fetch(imgUrl, {
@@ -98,7 +120,8 @@ async function processImage(imgUrl: string, env: Bindings) {
         }
     })
 
-    const buffer = await (avifResponse.ok ? avifResponse : response).arrayBuffer()
+    const isConverted = avifResponse.ok
+    const buffer = await (isConverted ? avifResponse : response).arrayBuffer()
 
     const hashObject = await crypto.subtle.digest('SHA-256', buffer)
     const hashHex = Array.from(new Uint8Array(hashObject))
@@ -106,8 +129,15 @@ async function processImage(imgUrl: string, env: Bindings) {
         .join('')
         .substring(0, 16)
 
-    const filename = `${hashHex}.avif`
-    await pushToGitHub(filename, buffer, env)
+    const extension = isConverted ? '.avif' : getExtensionFromContentType(originalContentType)
+    const filename = `${hashHex}${extension}`
+    
+    let commitMessage = `Upload ${filename}`
+    if (isSkipCi) {
+        commitMessage += ' [skip ci]'
+    }
+
+    await pushToGitHub(filename, buffer, env, commitMessage)
 
     return `${env.IMAGE_DOMAIN}/${filename}`
 }
@@ -128,13 +158,16 @@ app.post('/api/convert', async (c) => {
 
     const results: Record<string, string> = {}
     
-    await Promise.all(urls.map(async (url: string) => {
+    for (let i = 0; i < urls.length; i++) {
+        const url = urls[i]
+        const isSkipCi = i < urls.length - 1
         try {
-            results[url] = await processImage(url, c.env)
+            results[url] = await processImage(url, c.env, isSkipCi)
+            if (isSkipCi) await sleep(500) // 延迟以避免 GitHub API 速率限制
         } catch (e: any) {
             results[url] = `Error: ${e.message}`
         }
-    }))
+    }
 
     return c.json({ results })
 })
@@ -180,9 +213,11 @@ app.post('/telegram', async (c) => {
         
         if (urls.length === 0) return c.text('OK')
 
-        for (const url of urls) {
+        for (let i = 0; i < urls.length; i++) {
+            const url = urls[i]
+            const isSkipCi = i < urls.length - 1
             try {
-                const resultUrl = await processImage(url, c.env)
+                const resultUrl = await processImage(url, c.env, isSkipCi)
                 await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -192,6 +227,7 @@ app.post('/telegram', async (c) => {
                         reply_to_message_id: update.message.message_id
                     })
                 })
+                if (isSkipCi) await sleep(500) // 延迟以避免 GitHub API 速率限制
             } catch (e: any) {
                 await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
