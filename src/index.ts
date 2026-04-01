@@ -75,71 +75,170 @@ function getExtensionFromContentType(contentType: string | null): string {
     return map[type] || '.bin'
 }
 
-// Helper to push to GitHub
-async function pushToGitHub(filename: string, content: ArrayBuffer, env: Bindings, commitMessage: string) {
-    const base64 = arrayBufferToBase64(content)
-    const url = `https://api.github.com/repos/${env.GH_USER}/${env.GH_REPO}/contents/${filename}`
-
-    const res = await fetch(url, {
-        method: 'PUT',
-        headers: {
-            'Authorization': `token ${env.GH_TOKEN}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'Cloudflare-Worker-Image-Processor',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            message: commitMessage,
-            content: base64
-        })
-    })
-
-    if (!res.ok) {
-        const err = await res.text()
-        throw new Error(`GitHub Upload Failed: ${err}`)
+// Helper to get the final generated URL based on extension
+function getFinalUrl(domain: string, filename: string): string {
+    const extMatch = filename.match(/\.[^.]+$/);
+    const ext = extMatch ? extMatch[0].toLowerCase() : '';
+    const convertible = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+    
+    if (convertible.includes(ext)) {
+        return `${domain}/${filename.substring(0, filename.lastIndexOf('.'))}.avif`;
     }
+    return `${domain}/${filename}`;
 }
 
-// Image processing logic
-async function processImage(imgUrl: string, env: Bindings, isSkipCi: boolean = false) {
-    const response = await fetch(imgUrl, {
-        headers: { 'User-Agent': 'Cloudflare-Worker-Image-Processor' }
-    })
+interface GitHubFile {
+    filename: string;
+    content: ArrayBuffer;
+}
 
-    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`)
+interface ProcessedItem {
+    originalInput: string;
+    filename: string;
+    content: ArrayBuffer;
+    finalUrl: string;
+}
 
-    const originalContentType = response.headers.get('Content-Type')
+// Helper to push batch of files via GitHub Git Database API
+async function batchPushToGitHub(files: GitHubFile[], env: Bindings, commitMessage: string) {
+    if (files.length === 0) return;
 
-    // Convert to AVIF using Cloudflare Image Resizing (Requires Paid Plan)
-    const avifResponse = await fetch(imgUrl, {
-        cf: {
-            image: {
-                format: 'avif',
-                quality: 80
-            }
+    const headers = {
+        'Authorization': `token ${env.GH_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Cloudflare-Worker-Image-Processor',
+        'Content-Type': 'application/json'
+    };
+    
+    const baseUrl = `https://api.github.com/repos/${env.GH_USER}/${env.GH_REPO}`;
+
+    // 1. Get default branch (typically main)
+    let branch = 'main';
+    try {
+        const repoRes = await fetch(baseUrl, { headers });
+        if (repoRes.ok) {
+            const rData: any = await repoRes.json();
+            if (rData.default_branch) branch = rData.default_branch;
         }
-    })
+    } catch { }
 
-    const isConverted = avifResponse.ok
-    const buffer = await (isConverted ? avifResponse : response).arrayBuffer()
+    // 2. Get HEAD ref
+    const refRes = await fetch(`${baseUrl}/git/refs/heads/${branch}`, { headers });
+    if (!refRes.ok) throw new Error(`Cannot get branch ref: ${await refRes.text()}`);
+    const refData: any = await refRes.json();
+    const latestCommitSha = refData.object.sha;
 
+    // 3. Get commit tree sha
+    const commitRes = await fetch(`${baseUrl}/git/commits/${latestCommitSha}`, { headers });
+    if (!commitRes.ok) throw new Error(`Cannot get commit: ${await commitRes.text()}`);
+    const commitData: any = await commitRes.json();
+    const baseTreeSha = commitData.tree.sha;
+
+    // 4. Create blobs and gather unique files
+    const treeItems = [];
+    const uniqueFiles = new Map<string, GitHubFile>();
+    for (const file of files) {
+        if (!uniqueFiles.has(file.filename)) {
+            uniqueFiles.set(file.filename, file);
+        }
+    }
+
+    for (const file of uniqueFiles.values()) {
+        const base64 = arrayBufferToBase64(file.content);
+        const blobRes = await fetch(`${baseUrl}/git/blobs`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ content: base64, encoding: 'base64' })
+        });
+        if (!blobRes.ok) throw new Error(`Failed to create blob for ${file.filename}: ${await blobRes.text()}`);
+        const blobData: any = await blobRes.json();
+        treeItems.push({
+            path: file.filename,
+            mode: '100644',
+            type: 'blob',
+            sha: blobData.sha
+        });
+    }
+
+    // 5. Create new tree
+    const treeRes = await fetch(`${baseUrl}/git/trees`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            base_tree: baseTreeSha,
+            tree: treeItems
+        })
+    });
+    if (!treeRes.ok) throw new Error(`Failed to create tree: ${await treeRes.text()}`);
+    const treeData: any = await treeRes.json();
+
+    // 6. Create commit
+    const newCommitRes = await fetch(`${baseUrl}/git/commits`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            message: commitMessage,
+            tree: treeData.sha,
+            parents: [latestCommitSha]
+        })
+    });
+    if (!newCommitRes.ok) throw new Error(`Failed to create commit: ${await newCommitRes.text()}`);
+    const newCommitData: any = await newCommitRes.json();
+
+    // 7. Update ref
+    const updateRefRes = await fetch(`${baseUrl}/git/refs/heads/${branch}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+            sha: newCommitData.sha,
+            force: false
+        })
+    });
+    if (!updateRefRes.ok) throw new Error(`Failed to update branch ref: ${await updateRefRes.text()}`);
+}
+
+// Prepare image buffer
+async function prepareBuffer(buffer: ArrayBuffer, contentType: string | null, env: Bindings, originalInput: string): Promise<ProcessedItem> {
     const hashObject = await crypto.subtle.digest('SHA-256', buffer)
     const hashHex = Array.from(new Uint8Array(hashObject))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('')
         .substring(0, 16)
 
-    const extension = isConverted ? '.avif' : getExtensionFromContentType(originalContentType)
+    const extension = getExtensionFromContentType(contentType)
     const filename = `${hashHex}${extension}`
-    
-    let commitMessage = `Upload ${filename}`
-    if (isSkipCi) {
-        commitMessage += ' [skip ci]'
+
+    return {
+        originalInput,
+        filename,
+        content: buffer,
+        finalUrl: getFinalUrl(env.IMAGE_DOMAIN, filename)
     }
+}
 
-    await pushToGitHub(filename, buffer, env, commitMessage)
+// Fetch and prepare from URL
+async function prepareUrl(imgUrl: string, env: Bindings): Promise<ProcessedItem> {
+    const response = await fetch(imgUrl, {
+        headers: { 'User-Agent': 'Cloudflare-Worker-Image-Processor' }
+    })
 
-    return `${env.IMAGE_DOMAIN}/${filename}`
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`)
+
+    const contentType = response.headers.get('Content-Type')
+    const buffer = await response.arrayBuffer()
+
+    return prepareBuffer(buffer, contentType, env, imgUrl)
+}
+
+// Helper to reply via Telegram
+async function replyTelegram(chatId: string | number, text: string, replyTo: number | null, env: Bindings) {
+    const body: any = { chat_id: chatId, text: text }
+    if (replyTo) body.reply_to_message_id = replyTo;
+    await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
 }
 
 // Routes
@@ -156,16 +255,80 @@ app.post('/api/convert', async (c) => {
     const { urls } = await c.req.json()
     if (!urls || !Array.isArray(urls)) return c.json({ error: 'Invalid input' }, 400)
 
+    const items: ProcessedItem[] = [];
     const results: Record<string, string> = {}
     
     for (let i = 0; i < urls.length; i++) {
         const url = urls[i]
-        const isSkipCi = i < urls.length - 1
         try {
-            results[url] = await processImage(url, c.env, isSkipCi)
-            if (isSkipCi) await sleep(500) // 延迟以避免 GitHub API 速率限制
+            const item = await prepareUrl(url, c.env)
+            items.push(item)
         } catch (e: any) {
             results[url] = `Error: ${e.message}`
+        }
+    }
+
+    if (items.length > 0) {
+        try {
+            await batchPushToGitHub(items.map(i => ({ filename: i.filename, content: i.content })), c.env, `Added ${items.length} file(s) from API`)
+            items.forEach(i => results[i.originalInput] = i.finalUrl)
+        } catch (e: any) {
+            items.forEach(i => results[i.originalInput] = `Error committing to github: ${e.message}`)
+        }
+    }
+
+    return c.json({ results })
+})
+
+app.post('/api/upload', async (c) => {
+    const authHeader = c.req.header('X-Worker-Auth')
+    if (c.env.AUTH_TOKEN && authHeader !== c.env.AUTH_TOKEN) {
+        return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    let formData;
+    try {
+        formData = await c.req.parseBody();
+    } catch (err) {
+        return c.json({ error: 'Failed to parse form data' }, 400);
+    }
+
+    const files: File[] = [];
+    for (const key in formData) {
+        const val = formData[key];
+        if (Array.isArray(val)) {
+            val.forEach(v => {
+                if (v instanceof File) files.push(v);
+            });
+        } else if (val instanceof File) {
+            files.push(val);
+        }
+    }
+
+    if (files.length === 0) return c.json({ error: 'No files uploaded' }, 400);
+
+    const items: ProcessedItem[] = [];
+    const results: Record<string, string> = {}
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        try {
+            const buffer = await file.arrayBuffer()
+            const item = await prepareBuffer(buffer, file.type, c.env, file.name)
+            items.push(item)
+        } catch (e: any) {
+            results[file.name] = `Error: ${e.message}`
+        }
+    }
+
+    if (items.length > 0) {
+        let commitMsg = `Upload ${items.length} file(s): ${items.map(i => i.filename).join(', ')}`
+        if (commitMsg.length > 100) commitMsg = `Upload ${items.length} files from Form`
+        try {
+            await batchPushToGitHub(items.map(i => ({ filename: i.filename, content: i.content })), c.env, commitMsg)
+            items.forEach(i => results[i.originalInput] = i.finalUrl)
+        } catch (e: any) {
+            items.forEach(i => results[i.originalInput] = `Error committing to github: ${e.message}`)
         }
     }
 
@@ -189,54 +352,78 @@ app.get('/telegram/init', async (c) => {
 
 app.post('/telegram', async (c) => {
     const update: any = await c.req.json()
+    const message = update.message;
 
-    if (update.message?.text) {
-        const chatId = update.message.chat.id
-        const userId: number | undefined = update.message.from?.id
-        const text = update.message.text
+    if (!message) return c.text('OK');
 
-        // 白名单校验
-        if (!isTelegramUserAllowed(userId, c.env)) {
-            await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text: `⛔ Unauthorized. Your Telegram user ID is ${userId}, contact the admin to get access.`
-                })
-            })
-            return c.text('OK')
+    const chatId = message.chat.id
+    const userId: number | undefined = message.from?.id
+
+    // 白名单校验
+    if (!isTelegramUserAllowed(userId, c.env)) {
+        if (message.text || message.photo || message.document) {
+            await replyTelegram(chatId, `⛔ Unauthorized. Your Telegram user ID is ${userId}, contact the admin to get access.`, null, c.env);
         }
+        return c.text('OK')
+    }
 
-        // 分行处理
+    // 处理文本中的URL
+    if (message.text) {
+        const text = message.text
         const urls = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.startsWith('http'))
         
-        if (urls.length === 0) return c.text('OK')
+        if (urls.length > 0) {
+            const items: ProcessedItem[] = [];
+            const processedMsgs: string[] = [];
 
-        for (let i = 0; i < urls.length; i++) {
-            const url = urls[i]
-            const isSkipCi = i < urls.length - 1
+            for (let i = 0; i < urls.length; i++) {
+                const url = urls[i]
+                try {
+                    const item = await prepareUrl(url, c.env)
+                    items.push(item)
+                } catch (e: any) {
+                    processedMsgs.push(`Error (${url}): ${e.message}`)
+                }
+            }
+
+            if (items.length > 0) {
+                try {
+                    await batchPushToGitHub(items.map(i => ({ filename: i.filename, content: i.content })), c.env, `Added ${items.length} file(s) via Telegram Text Links`)
+                    items.forEach(i => processedMsgs.push(i.finalUrl))
+                } catch (e: any) {
+                    items.forEach(i => processedMsgs.push(`Error committing ${i.originalInput}: ${e.message}`))
+                }
+            }
+
+            if (processedMsgs.length > 0) {
+                await replyTelegram(chatId, processedMsgs.join('\n'), message.message_id, c.env)
+            }
+        }
+    } 
+    // 处理发送的图片和文件
+    else if (message.photo || message.document) {
+        let fileId = null;
+        if (message.photo) {
+            const photos = message.photo;
+            fileId = photos[photos.length - 1].file_id; // 获取最大分辨率图
+        } else if (message.document) {
+            fileId = message.document.file_id;
+        }
+
+        if (fileId) {
             try {
-                const resultUrl = await processImage(url, c.env, isSkipCi)
-                await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: resultUrl,
-                        reply_to_message_id: update.message.message_id
-                    })
-                })
-                if (isSkipCi) await sleep(500) // 延迟以避免 GitHub API 速率限制
+                const fileRes = await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/getFile?file_id=${fileId}`);
+                const fileData = await fileRes.json();
+                
+                if (!fileData.ok) throw new Error('Cannot get file id from Telegram');
+                
+                const fileUrl = `https://api.telegram.org/file/bot${c.env.TG_BOT_TOKEN}/${fileData.result.file_path}`;
+                const item = await prepareUrl(fileUrl, c.env);
+                
+                await batchPushToGitHub([{ filename: item.filename, content: item.content }], c.env, `Added file via Telegram Attachment`);
+                await replyTelegram(chatId, item.finalUrl, message.message_id, c.env);
             } catch (e: any) {
-                await fetch(`https://api.telegram.org/bot${c.env.TG_BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: `Error (${url}): ${e.message}`
-                    })
-                })
+                await replyTelegram(chatId, `Error Uploading: ${e.message}`, null, c.env)
             }
         }
     }
