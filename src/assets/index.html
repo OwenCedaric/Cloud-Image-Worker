@@ -64,13 +64,23 @@
             </div>
 
             <div id="tab-upload" class="tab-content active">
-                <div class="upload-area" id="uploadArea">
-                    <span class="upload-icon">✦</span>
-                    <div class="upload-text">Import Media Resources</div>
-                    <div class="upload-subtext">Click to browse or drag files into the vacuum</div>
-                    <input type="file" id="fileInput" multiple>
+                <div class="upload-flex-container">
+                    <div class="upload-area" id="uploadArea">
+                        <span class="upload-icon">✦</span>
+                        <div class="upload-text">Import Media Resources</div>
+                        <div class="upload-subtext">Click to browse or drag files into the vacuum</div>
+                        <input type="file" id="fileInput" multiple>
+                    </div>
+                    <div class="file-list-pane">
+                        <div class="file-list-header">
+                            <span>Pending Assets</span>
+                            <span id="fileCountBadge">0 selected</span>
+                        </div>
+                        <div class="file-list" id="fileList">
+                            <!-- Items populated via JS -->
+                        </div>
+                    </div>
                 </div>
-                <div class="file-list" id="fileList"></div>
             </div>
 
             <div id="tab-url" class="tab-content">
@@ -185,12 +195,36 @@
         uploadArea.addEventListener('drop', (e) => { e.preventDefault(); uploadArea.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
 
         function handleFiles(files) {
-            selectedFiles = Array.from(files);
+            const newFiles = Array.from(files);
+            // Deduplicate by name and size for a better UX
+            newFiles.forEach(file => {
+                if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                    selectedFiles.push(file);
+                }
+            });
+            updateFileList();
+            fileInput.value = ''; // Reset input so same file can be re-added if removed
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+        }
+
+        function updateFileList() {
+            const fileCountBadge = document.getElementById('fileCountBadge');
+            if (fileCountBadge) fileCountBadge.innerText = `${selectedFiles.length} selected`;
+
             if (selectedFiles.length > 0) {
-                fileListDisplay.innerHTML = `<strong>${selectedFiles.length} resources selected</strong>` + 
-                    (selectedFiles.length > 0 ? '<br>' + selectedFiles.slice(0, 3).map(f => f.name).join(', ') : '') + 
-                    (selectedFiles.length > 3 ? '...' : '');
-            } else { fileListDisplay.innerHTML = ''; }
+                fileListDisplay.innerHTML = selectedFiles.map((file, index) => `
+                    <div class="pending-file-item">
+                        <span class="file-info-name" title="${file.name}">${file.name}</span>
+                        <span class="file-remove-btn" onclick="removeFile(${index})">✕</span>
+                    </div>
+                `).join('');
+            } else {
+                fileListDisplay.innerHTML = '<div style="font-size:12px; color:var(--secondary-ink); opacity:0.5; text-align:center; margin-top:20px;">No files added</div>';
+            }
         }
 
         function getSelectedStorages() {
