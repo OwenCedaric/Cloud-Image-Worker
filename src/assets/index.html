@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud Image Worker</title>
     <!-- Importing Noto Sans SC and Noto Serif SC -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/fonts.css">
+    <link rel="stylesheet" href="/style.css">
     <style>
         :root {
             /* 1.1 Semantic Color System */
@@ -24,109 +25,6 @@
             --font-major: clamp(28px, 3vw + 20px, 40px);
             --font-giant: clamp(48px, 8vw + 24px, 128px);
         }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
-        body { 
-            font-family: 'Noto Sans SC', sans-serif; 
-            background-color: var(--base-surface); 
-            color: var(--primary-ink);
-            min-height: 100vh;
-            padding: 0 24px;
-            line-height: 1.85;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            overflow-x: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .main-container {
-            width: 100%;
-            max-width: 896px;
-            margin: 0 auto;
-            padding: 96px 0 160px 0;
-        }
-
-        header { margin-bottom: 64px; position: relative; }
-        .logo { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: var(--font-auxiliary); color: var(--secondary-ink); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; display: block; }
-        h1 { font-family: 'Noto Serif SC', serif; font-size: var(--font-major); font-weight: 700; line-height: 1.1; margin-bottom: 24px; -webkit-text-stroke: 1px var(--stroke-tint); color: transparent; letter-spacing: -0.02em; }
-        .subtitle { font-weight: 300; font-size: var(--font-base); color: var(--secondary-ink); max-width: 608px; }
-
-        .global-config { display: grid; gap: 40px; margin-bottom: 64px; padding-bottom: 48px; border-bottom: 1px solid var(--subtle-border); width: 100%; }
-
-        .tabs { display: flex; gap: 32px; margin-bottom: 48px; border-bottom: 1px dashed var(--subtle-border); }
-        .tab { padding: 12px 0; cursor: pointer; font-weight: 500; color: var(--secondary-ink); font-size: var(--font-auxiliary); transition: color 0.3s; position: relative; }
-        .tab.active { color: var(--primary-ink); }
-        .tab.active::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 2px; background: var(--accent); }
-
-        .tab-content { display: none; margin-bottom: 40px; }
-        .tab-content.active { display: block; }
-
-        textarea { width: 100%; min-height: 200px; padding: 24px; font-family: inherit; font-size: var(--font-base); font-weight: 300; color: var(--primary-ink); background: var(--subtle-fill); border: 1px solid transparent; border-radius: 2px; outline: none; resize: vertical; transition: border-color 0.3s; margin-bottom: 32px; line-height: 1.85; }
-        textarea:focus { border-color: var(--subtle-border); }
-
-        input[type="password"] { width: 100%; max-width: 448px; padding: 16px 24px; font-family: inherit; font-size: var(--font-auxiliary); font-weight: 300; color: var(--primary-ink); background: var(--subtle-fill); border: 1px solid transparent; border-radius: 2px; outline: none; transition: border-color 0.3s; display: block; }
-        input[type="password"]:focus { border-color: var(--subtle-border); }
-
-        .config-label { font-size: var(--font-micro); color: var(--secondary-ink); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; margin-bottom: 12px; display: block; }
-
-        .checkbox-group { display: flex; gap: 32px; flex-wrap: wrap; }
-        .checkbox-container { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: var(--font-auxiliary); color: var(--primary-ink); background: var(--subtle-fill); padding: 12px 20px; border-radius: 2px; transition: background 0.3s; }
-        .checkbox-container:hover { background: var(--subtle-border); }
-        .checkbox-container input { cursor: pointer; width: 18px; height: 18px; accent-color: var(--accent); }
-
-        .upload-area { width: 100%; max-width: 608px; padding: 64px 32px; text-align: center; background: var(--base-surface); border: 1px dashed var(--subtle-border); border-radius: 2px; margin-bottom: 32px; cursor: pointer; transition: transform 0.3s, background 0.3s; position: relative; }
-        .upload-area:hover { transform: translateY(-2px); background: var(--subtle-fill); }
-        .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-
-        .upload-icon { font-size: 32px; color: var(--accent); margin-bottom: 16px; display: block; }
-        .upload-text { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: var(--font-auxiliary); color: var(--primary-ink); margin-bottom: 8px; }
-        .upload-subtext { font-size: var(--font-micro); color: var(--secondary-ink); font-weight: 300; }
-
-        .file-list { font-size: var(--font-micro); color: var(--secondary-ink); margin-bottom: 32px; font-weight: 300; }
-
-        button#processBtn { background: none; color: var(--primary-ink); border: 1px solid var(--primary-ink); padding: 16px 40px; font-family: 'Noto Serif SC', serif; font-size: var(--font-auxiliary); font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); display: inline-flex; align-items: center; justify-content: center; gap: 16px; border-radius: 0; position: relative; }
-        button#processBtn:hover { background: var(--subtle-fill); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
-        button#processBtn:active { transform: translateY(0); background: var(--subtle-border); }
-        button#processBtn:disabled { opacity: 0.2; cursor: not-allowed; border-color: var(--subtle-border); color: var(--secondary-ink); }
-        button#processBtn svg { transition: transform 0.3s; }
-        button#processBtn:hover svg { transform: translateX(4px); }
-
-        #status { margin-top: 24px; font-size: var(--font-micro); color: var(--secondary-ink); font-weight: 300; letter-spacing: 0.05em; }
-
-        .results-area { display: none; margin-top: 96px; padding-top: 48px; border-top: 1px dashed var(--subtle-border); width: 100%; }
-        .results-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 48px; }
-        .results-header h2 { font-family: 'Noto Serif SC', serif; font-size: var(--font-subheading); font-weight: 600; letter-spacing: -0.01em; }
-
-        .btn-text { background: none; border: none; color: var(--accent); font-family: 'Noto Serif SC', serif; font-size: var(--font-micro); font-weight: 600; text-transform: uppercase; letter-spacing: 0.2em; cursor: pointer; padding: 8px 0; transition: opacity 0.3s; }
-        .btn-text:hover { opacity: 0.7; }
-
-        .result-list { display: flex; flex-direction: column; gap: 24px; position: relative; }
-        .result-item { display: flex; flex-direction: column; align-items: flex-start; max-width: 608px; position: relative; }
-        .result-bubble { background: var(--subtle-fill); padding: 16px 24px; border-radius: 2px 24px 24px 24px; width: 100%; transition: transform 0.3s; }
-        .result-item:hover .result-bubble { transform: translateY(-2px); }
-        .result-label { font-size: var(--font-micro); color: var(--secondary-ink); margin-bottom: 8px; font-weight: 300; overflow-wrap: break-word; }
-        .result-link { color: var(--primary-ink); font-weight: 500; text-decoration: none; font-size: var(--font-auxiliary); display: flex; flex-direction: column; gap: 8px; word-break: break-all; }
-        .link-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 4px 0; }
-        .copy-trigger { color: var(--accent); font-weight: 600; cursor: pointer; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-
-        .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 32px; width: 100%; }
-        .asset-card { background: var(--base-surface); border: 1px solid var(--subtle-border); padding: 16px; border-radius: 2px; transition: transform 0.3s; display: flex; flex-direction: column; gap: 12px; }
-        .asset-card:hover { transform: translateY(-4px); border-color: var(--accent); }
-        .asset-preview { width: 100%; aspect-ratio: 1; background: var(--subtle-fill); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .asset-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
-        .asset-info { font-size: var(--font-micro); color: var(--secondary-ink); }
-        .asset-key { color: var(--primary-ink); font-weight: 500; word-break: break-all; margin-bottom: 4px; }
-        .asset-actions { display: flex; justify-content: space-between; margin-top: auto; }
-        .btn-delete { color: #EF4444; cursor: pointer; font-weight: 600; font-size: 10px; text-transform: uppercase; }
-
-        .terminal-coda { margin-top: 160px; border-top: 1px solid var(--subtle-border); padding-top: 80px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; }
-        .coda-text { font-family: 'Noto Serif SC', serif; font-size: var(--font-auxiliary); color: var(--secondary-ink); letter-spacing: 0.2em; text-transform: uppercase; }
-        .coda-anchor { font-family: 'Noto Serif SC', serif; font-size: var(--font-giant); font-weight: 700; -webkit-text-stroke: 1px var(--stroke-tint); color: transparent; margin-top: 40px; line-height: 1; }
-
-        @media (max-width: 768px) { .main-container { padding: 64px 0 96px 0; } header { margin-bottom: 64px; } .results-area { margin-top: 64px; } }
-        @media (max-width: 480px) { body { padding: 0 16px; } .main-container { padding: 48px 0 64px 0; } h1 { font-size: 32px; } .tabs { gap: 16px; } .checkbox-group { gap: 16px; } }
     </style>
 </head>
 <body>
@@ -141,7 +39,7 @@
             <div class="global-config">
                 <div id="authSection">
                     <span class="config-label">Authentication Access</span>
-                    <input type="password" id="authToken" placeholder="Enter Token to Unlock Management" />
+                    <input type="password" id="authToken" style="max-width: 100%;" placeholder="Enter Token to Unlock Management" />
                 </div>
 
                 <div id="storageSection">
@@ -149,11 +47,11 @@
                     <div class="checkbox-group">
                         <label class="checkbox-container">
                             <input type="checkbox" id="targetGithub" checked>
-                            <span>GitHub Repository</span>
+                            <span>GitHub</span>
                         </label>
                         <label class="checkbox-container">
                             <input type="checkbox" id="targetR2">
-                            <span>Cloudflare R2 (Auto-AVIF)</span>
+                            <span>Cloudflare R2</span>
                         </label>
                     </div>
                 </div>

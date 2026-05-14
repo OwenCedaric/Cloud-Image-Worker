@@ -74,6 +74,17 @@ jobs:
           hostname = %APPEND% $DOMAIN
           EOF
 
+          # 4. Prepare local assets
+          mkdir -p public/fonts
+          cp src/assets/style.css public/style.css
+          cp node_modules/@fontsource/noto-sans-sc/files/* public/fonts/
+          cp node_modules/@fontsource/noto-serif-sc/files/* public/fonts/
+          
+          # Combine CSS and fix paths
+          cat node_modules/@fontsource/noto-sans-sc/index.css > public/fonts.css
+          cat node_modules/@fontsource/noto-serif-sc/index.css >> public/fonts.css
+          sed -i 's|\./files/|/fonts/|g' public/fonts.css
+
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
