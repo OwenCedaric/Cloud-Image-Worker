@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build and Local Output
+dist/
+.wrangler/
+.dev.vars/
+# wrangler.toml # Uncomment if you want to keep secrets in it locally
+
+# System files (macOS & Windows)
+.DS_Store
+Thumbs.db
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs and Env
+*.log
+.env
+.env.local
+node_modules/
+
+# Generated Assets
+src/assets/surge-module.ts
+wrangler.toml

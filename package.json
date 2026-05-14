@@ -1,0 +1,25 @@
+{
+    "name": "cloud-image-worker",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "engines": {
+        "node": ">=24.0.0"
+    },
+    "dependencies": {
+        "@cloudflare/workers-types": "^4.20260511.1",
+        "@jsquash/avif": "^2.1.1",
+        "@jsquash/jpeg": "^1.6.0",
+        "@jsquash/png": "^3.1.1",
+        "@jsquash/webp": "^1.5.0",
+        "hono": "^4.12.18",
+        "wrangler": "^4.90.1"
+    }
+}

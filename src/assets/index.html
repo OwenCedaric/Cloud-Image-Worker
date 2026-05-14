@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Image Worker</title>
+    <!-- Importing Noto Sans SC and Noto Serif SC -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* 1.1 Semantic Color System */
+            --base-surface: {{BASE_SURFACE}};
+            --primary-ink: {{PRIMARY_INK}};
+            --secondary-ink: {{SECONDARY_INK}};
+            --accent: {{ACCENT}};
+            --subtle-border: rgba(61, 68, 81, 0.2);
+            --subtle-fill: rgba(61, 68, 81, 0.08);
+            --stroke-tint: rgba(61, 68, 81, 0.6);
+            
+            --font-micro: clamp(12px, 0.8vw + 8px, 14px);
+            --font-auxiliary: clamp(14px, 1vw + 10px, 18px);
+            --font-base: clamp(16px, 1.2vw + 12px, 18px);
+            --font-subheading: clamp(20px, 1.5vw + 14px, 24px);
+            --font-major: clamp(28px, 3vw + 20px, 40px);
+            --font-giant: clamp(48px, 8vw + 24px, 128px);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: var(--base-surface); 
+            color: var(--primary-ink);
+            min-height: 100vh;
+            padding: 0 24px;
+            line-height: 1.85;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .main-container {
+            width: 100%;
+            max-width: 896px;
+            margin: 0 auto;
+            padding: 96px 0 160px 0;
+        }
+
+        header { margin-bottom: 64px; position: relative; }
+        .logo { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: var(--font-auxiliary); color: var(--secondary-ink); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; display: block; }
+        h1 { font-family: 'Noto Serif SC', serif; font-size: var(--font-major); font-weight: 700; line-height: 1.1; margin-bottom: 24px; -webkit-text-stroke: 1px var(--stroke-tint); color: transparent; letter-spacing: -0.02em; }
+        .subtitle { font-weight: 300; font-size: var(--font-base); color: var(--secondary-ink); max-width: 608px; }
+
+        .global-config { display: grid; gap: 40px; margin-bottom: 64px; padding-bottom: 48px; border-bottom: 1px solid var(--subtle-border); width: 100%; }
+
+        .tabs { display: flex; gap: 32px; margin-bottom: 48px; border-bottom: 1px dashed var(--subtle-border); }
+        .tab { padding: 12px 0; cursor: pointer; font-weight: 500; color: var(--secondary-ink); font-size: var(--font-auxiliary); transition: color 0.3s; position: relative; }
+        .tab.active { color: var(--primary-ink); }
+        .tab.active::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 2px; background: var(--accent); }
+
+        .tab-content { display: none; margin-bottom: 40px; }
+        .tab-content.active { display: block; }
+
+        textarea { width: 100%; min-height: 200px; padding: 24px; font-family: inherit; font-size: var(--font-base); font-weight: 300; color: var(--primary-ink); background: var(--subtle-fill); border: 1px solid transparent; border-radius: 2px; outline: none; resize: vertical; transition: border-color 0.3s; margin-bottom: 32px; line-height: 1.85; }
+        textarea:focus { border-color: var(--subtle-border); }
+
+        input[type="password"] { width: 100%; max-width: 448px; padding: 16px 24px; font-family: inherit; font-size: var(--font-auxiliary); font-weight: 300; color: var(--primary-ink); background: var(--subtle-fill); border: 1px solid transparent; border-radius: 2px; outline: none; transition: border-color 0.3s; display: block; }
+        input[type="password"]:focus { border-color: var(--subtle-border); }
+
+        .config-label { font-size: var(--font-micro); color: var(--secondary-ink); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; margin-bottom: 12px; display: block; }
+
+        .checkbox-group { display: flex; gap: 32px; flex-wrap: wrap; }
+        .checkbox-container { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: var(--font-auxiliary); color: var(--primary-ink); background: var(--subtle-fill); padding: 12px 20px; border-radius: 2px; transition: background 0.3s; }
+        .checkbox-container:hover { background: var(--subtle-border); }
+        .checkbox-container input { cursor: pointer; width: 18px; height: 18px; accent-color: var(--accent); }
+
+        .upload-area { width: 100%; max-width: 608px; padding: 64px 32px; text-align: center; background: var(--base-surface); border: 1px dashed var(--subtle-border); border-radius: 2px; margin-bottom: 32px; cursor: pointer; transition: transform 0.3s, background 0.3s; position: relative; }
+        .upload-area:hover { transform: translateY(-2px); background: var(--subtle-fill); }
+        .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+        .upload-icon { font-size: 32px; color: var(--accent); margin-bottom: 16px; display: block; }
+        .upload-text { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: var(--font-auxiliary); color: var(--primary-ink); margin-bottom: 8px; }
+        .upload-subtext { font-size: var(--font-micro); color: var(--secondary-ink); font-weight: 300; }
+
+        .file-list { font-size: var(--font-micro); color: var(--secondary-ink); margin-bottom: 32px; font-weight: 300; }
+
+        button#processBtn { background: none; color: var(--primary-ink); border: 1px solid var(--primary-ink); padding: 16px 40px; font-family: 'Noto Serif SC', serif; font-size: var(--font-auxiliary); font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); display: inline-flex; align-items: center; justify-content: center; gap: 16px; border-radius: 0; position: relative; }
+        button#processBtn:hover { background: var(--subtle-fill); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+        button#processBtn:active { transform: translateY(0); background: var(--subtle-border); }
+        button#processBtn:disabled { opacity: 0.2; cursor: not-allowed; border-color: var(--subtle-border); color: var(--secondary-ink); }
+        button#processBtn svg { transition: transform 0.3s; }
+        button#processBtn:hover svg { transform: translateX(4px); }
+
+        #status { margin-top: 24px; font-size: var(--font-micro); color: var(--secondary-ink); font-weight: 300; letter-spacing: 0.05em; }
+
+        .results-area { display: none; margin-top: 96px; padding-top: 48px; border-top: 1px dashed var(--subtle-border); width: 100%; }
+        .results-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 48px; }
+        .results-header h2 { font-family: 'Noto Serif SC', serif; font-size: var(--font-subheading); font-weight: 600; letter-spacing: -0.01em; }
+
+        .btn-text { background: none; border: none; color: var(--accent); font-family: 'Noto Serif SC', serif; font-size: var(--font-micro); font-weight: 600; text-transform: uppercase; letter-spacing: 0.2em; cursor: pointer; padding: 8px 0; transition: opacity 0.3s; }
+        .btn-text:hover { opacity: 0.7; }
+
+        .result-list { display: flex; flex-direction: column; gap: 24px; position: relative; }
+        .result-item { display: flex; flex-direction: column; align-items: flex-start; max-width: 608px; position: relative; }
+        .result-bubble { background: var(--subtle-fill); padding: 16px 24px; border-radius: 2px 24px 24px 24px; width: 100%; transition: transform 0.3s; }
+        .result-item:hover .result-bubble { transform: translateY(-2px); }
+        .result-label { font-size: var(--font-micro); color: var(--secondary-ink); margin-bottom: 8px; font-weight: 300; overflow-wrap: break-word; }
+        .result-link { color: var(--primary-ink); font-weight: 500; text-decoration: none; font-size: var(--font-auxiliary); display: flex; flex-direction: column; gap: 8px; word-break: break-all; }
+        .link-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 4px 0; }
+        .copy-trigger { color: var(--accent); font-weight: 600; cursor: pointer; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+        .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 32px; width: 100%; }
+        .asset-card { background: var(--base-surface); border: 1px solid var(--subtle-border); padding: 16px; border-radius: 2px; transition: transform 0.3s; display: flex; flex-direction: column; gap: 12px; }
+        .asset-card:hover { transform: translateY(-4px); border-color: var(--accent); }
+        .asset-preview { width: 100%; aspect-ratio: 1; background: var(--subtle-fill); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .asset-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .asset-info { font-size: var(--font-micro); color: var(--secondary-ink); }
+        .asset-key { color: var(--primary-ink); font-weight: 500; word-break: break-all; margin-bottom: 4px; }
+        .asset-actions { display: flex; justify-content: space-between; margin-top: auto; }
+        .btn-delete { color: #EF4444; cursor: pointer; font-weight: 600; font-size: 10px; text-transform: uppercase; }
+
+        .terminal-coda { margin-top: 160px; border-top: 1px solid var(--subtle-border); padding-top: 80px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; }
+        .coda-text { font-family: 'Noto Serif SC', serif; font-size: var(--font-auxiliary); color: var(--secondary-ink); letter-spacing: 0.2em; text-transform: uppercase; }
+        .coda-anchor { font-family: 'Noto Serif SC', serif; font-size: var(--font-giant); font-weight: 700; -webkit-text-stroke: 1px var(--stroke-tint); color: transparent; margin-top: 40px; line-height: 1; }
+
+        @media (max-width: 768px) { .main-container { padding: 64px 0 96px 0; } header { margin-bottom: 64px; } .results-area { margin-top: 64px; } }
+        @media (max-width: 480px) { body { padding: 0 16px; } .main-container { padding: 48px 0 64px 0; } h1 { font-size: 32px; } .tabs { gap: 16px; } .checkbox-group { gap: 16px; } }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <header>
+            <span class="logo">Cloud Image Worker</span>
+            <h1>File Processor</h1>
+            <p class="subtitle">An immersive typographic environment for processing media resources.</p>
+        </header>
+
+        <main>
+            <div class="global-config">
+                <div id="authSection">
+                    <span class="config-label">Authentication Access</span>
+                    <input type="password" id="authToken" placeholder="Enter Token to Unlock Management" />
+                </div>
+
+                <div id="storageSection">
+                    <span class="config-label">Storage Targets (At least one)</span>
+                    <div class="checkbox-group">
+                        <label class="checkbox-container">
+                            <input type="checkbox" id="targetGithub" checked>
+                            <span>GitHub Repository</span>
+                        </label>
+                        <label class="checkbox-container">
+                            <input type="checkbox" id="targetR2">
+                            <span>Cloudflare R2 (Auto-AVIF)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="upload" onclick="setTab('upload')">File Upload</div>
+                <div class="tab" data-tab="url" onclick="setTab('url')">URL Links</div>
+                <div class="tab" data-tab="manage" onclick="setTab('manage')">Manage Assets</div>
+            </div>
+
+            <div id="tab-upload" class="tab-content active">
+                <div class="upload-area" id="uploadArea">
+                    <span class="upload-icon">✦</span>
+                    <div class="upload-text">Import Media Resources</div>
+                    <div class="upload-subtext">Click to browse or drag files into the vacuum</div>
+                    <input type="file" id="fileInput" multiple>
+                </div>
+                <div class="file-list" id="fileList"></div>
+            </div>
+
+            <div id="tab-url" class="tab-content">
+                <textarea id="urls" placeholder="Paste media URLs (one per line)..."></textarea>
+            </div>
+
+            <div id="tab-manage" class="tab-content">
+                <div class="results-header">
+                    <h2 id="assetCount">R2 Assets (0)</h2>
+                    <button class="btn-text" onclick="loadAssets()">Refresh</button>
+                </div>
+                <div class="asset-grid" id="assetGrid"></div>
+                <div id="pagination" style="margin-top: 48px; text-align: center; display: none;">
+                    <button class="btn-text" id="loadMoreBtn" onclick="loadAssets(true)">Load More Assets</button>
+                </div>
+            </div>
+
+            <div id="processControls">
+                <button id="processBtn" onclick="processItems()">
+                    <span>Execute Process</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </button>
+            </div>
+
+            <div id="status"></div>
+
+            <section class="results-area" id="resultsArea">
+                <div class="results-header">
+                    <h2>Generated Links</h2>
+                    <button class="btn-text" onclick="copyAll()">Copy All</button>
+                </div>
+                <div class="result-list" id="resultList"></div>
+            </section>
+        </main>
+
+        <footer class="terminal-coda">
+            <div class="coda-text">End of Movement</div>
+            <div class="coda-anchor">CIW</div>
+        </footer>
+    </div>
+
+    <!-- Processing Libraries via Module System -->
+    <script type="module">
+        import { encode as encodeAvif, init as initAvif } from 'https://unpkg.com/@jsquash/avif@1.2.0?module';
+        import { decode as decodeJpeg, init as initJpeg } from 'https://unpkg.com/@jsquash/jpeg@1.2.0?module';
+        import { decode as decodePng, init as initPng } from 'https://unpkg.com/@jsquash/png@1.2.0?module';
+        import { decode as decodeWebp, init as initWebp } from 'https://unpkg.com/@jsquash/webp@1.2.0?module';
+
+        window.TingeProcessor = {
+            encodeAvif, initAvif, decodeJpeg, initJpeg, decodePng, initPng, decodeWebp, initWebp,
+            initialized: false,
+            async init() {
+                if (this.initialized) return;
+                try {
+                    await Promise.all([
+                        initAvif(fetch('https://unpkg.com/@jsquash/avif@1.2.0/codec/enc/avif_enc.wasm')),
+                        initJpeg(fetch('https://unpkg.com/@jsquash/jpeg@1.2.0/codec/dec/mozjpeg_dec.wasm')),
+                        initPng(fetch('https://unpkg.com/@jsquash/png@1.2.0/codec/pkg/squoosh_png_bg.wasm')),
+                        initWebp(fetch('https://unpkg.com/@jsquash/webp@1.2.0/codec/dec/webp_dec.wasm'))
+                    ]);
+                    this.initialized = true;
+                } catch (e) {
+                    console.error('WASM Initialization failed:', e);
+                    throw new Error('Failed to load image processing modules.');
+                }
+            },
+            async convertToAvif(file) {
+                await this.init();
+                const buffer = await file.arrayBuffer();
+                let imageData;
+                if (file.type === 'image/jpeg' || file.type === 'image/jpg') imageData = await decodeJpeg(buffer);
+                else if (file.type === 'image/png') imageData = await decodePng(buffer);
+                else if (file.type === 'image/webp') imageData = await decodeWebp(buffer);
+                else throw new Error('Unsupported format for conversion');
+                
+                const avifBuffer = await encodeAvif(imageData);
+                return new File([avifBuffer], file.name.replace(/\.[^.]+$/, '.avif'), { type: 'image/avif' });
+            }
+        };
+    </script>
+
+    <script>
+        let currentTab = 'upload';
+        let selectedFiles = [];
+        let r2Cursor = null;
+
+        const statusEl = document.getElementById('status');
+        const urlsEl = document.getElementById('urls');
+        const processBtn = document.getElementById('processBtn');
+        const resultsArea = document.getElementById('resultsArea');
+        const resultList = document.getElementById('resultList');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileListDisplay = document.getElementById('fileList');
+        const processControls = document.getElementById('processControls');
+
+        function setTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            const activeTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+            if (activeTab) activeTab.classList.add('active');
+            const activeContent = document.getElementById('tab-' + tabId);
+            if (activeContent) activeContent.classList.add('active');
+            if (tabId === 'manage') { processControls.style.display = 'none'; loadAssets(); }
+            else { processControls.style.display = 'block'; }
+        }
+
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('dragover'); });
+        uploadArea.addEventListener('drop', (e) => { e.preventDefault(); uploadArea.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+
+        function handleFiles(files) {
+            selectedFiles = Array.from(files);
+            if (selectedFiles.length > 0) {
+                fileListDisplay.innerHTML = `<strong>${selectedFiles.length} resources selected</strong>` + 
+                    (selectedFiles.length > 0 ? '<br>' + selectedFiles.slice(0, 3).map(f => f.name).join(', ') : '') + 
+                    (selectedFiles.length > 3 ? '...' : '');
+            } else { fileListDisplay.innerHTML = ''; }
+        }
+
+        function getSelectedStorages() {
+            const storages = [];
+            if (document.getElementById('targetGithub').checked) storages.push('github');
+            if (document.getElementById('targetR2').checked) storages.push('r2');
+            return storages;
+        }
+
+        async function processItems() {
+            const storages = getSelectedStorages();
+            if (storages.length === 0) { statusEl.innerText = 'Error: Please select at least one storage target.'; return; }
+
+            processBtn.disabled = true;
+            statusEl.innerText = 'Initializing process...';
+            resultList.innerHTML = '';
+            resultsArea.style.display = 'none';
+
+            try {
+                const token = document.getElementById('authToken').value.trim();
+                const data = { results: {} };
+
+                if (currentTab === 'url') {
+                    const lines = urlsEl.value.split('\n').map(l => l.trim()).filter(l => l !== '');
+                    if (lines.length === 0) throw new Error('Input required');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token) headers['X-Worker-Auth'] = token;
+                    const res = await fetch('/api/convert', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({ urls: lines, storage: storages })
+                    });
+                    if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
+                    const resData = await res.json();
+                    Object.assign(data.results, resData.results || {});
+                } else if (currentTab === 'upload') {
+                    if (selectedFiles.length === 0) throw new Error('Files required');
+                    
+                    for (const file of selectedFiles) {
+                        statusEl.innerText = `Preparing ${file.name}...`;
+                        const formData = new FormData();
+                        
+                        if (storages.includes('github')) {
+                            formData.append('file', file);
+                            formData.append('storage', 'github');
+                        }
+
+                        if (storages.includes('r2')) {
+                            statusEl.innerText = `Optimizing ${file.name} to AVIF...`;
+                            try {
+                                const avifFile = await window.TingeProcessor.convertToAvif(file);
+                                formData.append('file', avifFile);
+                                if (!formData.has('storage')) formData.append('storage', 'r2');
+                                else formData.set('storage', formData.get('storage') + ',r2');
+                            } catch (e) {
+                                console.warn('AVIF Conversion failed, uploading original:', e);
+                                formData.append('file', file);
+                                if (!formData.has('storage')) formData.append('storage', 'r2');
+                                else formData.set('storage', formData.get('storage') + ',r2');
+                            }
+                        }
+
+                        const headers = {};
+                        if (token) headers['X-Worker-Auth'] = token;
+                        const res = await fetch('/api/upload', {
+                            method: 'POST',
+                            headers: headers,
+                            body: formData
+                        });
+                        if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
+                        const resData = await res.json();
+                        Object.assign(data.results, resData.results);
+                    }
+                }
+
+                if (Object.keys(data.results).length > 0) {
+                    statusEl.innerText = '';
+                    Object.entries(data.results).forEach(([input, output]) => {
+                        const item = document.createElement('div');
+                        item.className = 'result-item';
+                        const isError = output.startsWith('Error:');
+                        const outputLinks = output.split(' | ').map(link => link.trim());
+                        let linksHtml = isError ? `<span style="color: #EF4444;">${output}</span>` : '';
+                        if (!isError) {
+                            outputLinks.forEach(link => {
+                                const isR2 = link.includes('/images/');
+                                const label = isR2 ? 'R2' : 'GH';
+                                linksHtml += `<div class="link-row"><div style="display: flex; gap: 8px; align-items: center;"><span style="font-size: 9px; color: var(--secondary-ink); border: 1px solid var(--subtle-border); padding: 0 4px; border-radius: 1px;">${label}</span><a href="${link}" target="_blank" style="color: inherit; text-decoration: none;">${link}</a></div><span class="copy-trigger" onclick="copyText('${link}')">COPY</span></div>`;
+                            });
+                        }
+                        item.innerHTML = `<div class="result-label">${input}</div><div class="result-bubble"><div class="result-link">${linksHtml}</div></div>`;
+                        resultList.appendChild(item);
+                    });
+                    resultsArea.style.display = 'block';
+                    urlsEl.value = ''; selectedFiles = []; fileListDisplay.innerHTML = ''; fileInput.value = '';
+                }
+            } catch (e) { statusEl.innerText = 'Error: ' + e.message; }
+            finally { processBtn.disabled = false; }
+        }
+
+        async function loadAssets(loadMore = false) {
+            const token = document.getElementById('authToken').value.trim();
+            const grid = document.getElementById('assetGrid');
+            const countEl = document.getElementById('assetCount');
+            const pagination = document.getElementById('pagination');
+            if (!loadMore) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">Retrieving records...</div>'; r2Cursor = null; }
+            if (!loadMore) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">Retrieving records...</div>'; r2Cursor = null; }
+            try {
+                const url = new URL('/api/images', window.location.origin);
+                if (r2Cursor) url.searchParams.set('cursor', r2Cursor);
+                const headers = {};
+                if (token) headers['X-Worker-Auth'] = token;
+                const res = await fetch(url, { headers });
+                if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
+                const result = await res.json();
+                if (result.status === 'success') {
+                    if (!loadMore) grid.innerHTML = '';
+                    result.data.objects.forEach(obj => {
+                        const card = document.createElement('div');
+                        card.className = 'asset-card';
+                        card.innerHTML = `<div class="asset-preview"><img src="${obj.url}" loading="lazy"></div><div class="asset-info"><div class="asset-key">${obj.key}</div><div>Size: ${(obj.size / 1024).toFixed(1)} KB</div><div>Date: ${new Date(obj.uploaded).toLocaleDateString()}</div></div><div class="asset-actions"><span class="btn-text" onclick="copyText('${obj.url}')">Copy URL</span><span class="btn-delete" onclick="deleteAsset('${obj.key}')">Delete</span></div>`;
+                        grid.appendChild(card);
+                    });
+                    r2Cursor = result.data.cursor;
+                    pagination.style.display = r2Cursor ? 'block' : 'none';
+                    countEl.innerText = `R2 Assets (${grid.children.length}${r2Cursor ? '+' : ''})`;
+                }
+            } catch (e) { grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #EF4444;">${e.message}</div>`; countEl.innerText = 'R2 Assets (Error)'; }
+        }
+
+        async function deleteAsset(key) {
+            if (!confirm(`Delete resource: ${key}?`)) return;
+            const token = document.getElementById('authToken').value.trim();
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['X-Worker-Auth'] = token;
+            try {
+                const res = await fetch('/api/images', { method: 'DELETE', headers, body: JSON.stringify({ key }) });
+                if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
+                loadAssets();
+            } catch (e) { alert(e.message); }
+        }
+
+        function copyText(text) { navigator.clipboard.writeText(text).then(() => { const trigger = event.target; const originalText = trigger.innerText; trigger.innerText = 'COPIED'; setTimeout(() => { if (trigger) trigger.innerText = originalText; }, 1500); }); }
+        function copyAll() { const links = Array.from(resultList.querySelectorAll('a')).map(a => a.href).join('\n'); navigator.clipboard.writeText(links).then(() => { const btn = event.target; const originalText = btn.innerText; btn.innerText = 'ALL COPIED'; setTimeout(() => btn.innerText = originalText, 1500); }); }
+        window.setTab = setTab;
+    </script>
+</body>
+</html>
