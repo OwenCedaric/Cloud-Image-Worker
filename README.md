@@ -27,6 +27,15 @@ To enable automated deployment via GitHub Actions, configure the following **Sec
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID. |
 | `AUTH_TOKEN` | Custom secret for API authentication (used in `X-Worker-Auth` header). |
 
+### ⚙️ Environment Variables (GitHub Variables)
+In addition to secrets, you can configure these **Variables** (**Settings > Secrets and variables > Actions > Variables**):
+
+| Variable Name | Description | Default |
+| :--- | :--- | :--- |
+| `WORKER_NAME` | The name of your Cloudflare Worker. | `cloud-image-worker` |
+| `R2_BINDING` | The R2 binding name accessed by the code. | `tinge` |
+| `R2_BUCKET` | The actual name of your R2 bucket. | `tinge` |
+
 ### 📂 Storage Integration (GitHub)
 | Secret Name | Description |
 | :--- | :--- |
@@ -44,21 +53,28 @@ To enable automated deployment via GitHub Actions, configure the following **Sec
 ## 🚀 Deployment
 
 1. **R2 Bucket Setup**:  
-   Create an R2 bucket named `tinge` in your Cloudflare dashboard before deployment.
+   Create an R2 bucket in your Cloudflare dashboard. Note the name and set it as `R2_BUCKET` in your GitHub Variables.
 
 2. **Deploy to Production**:  
-   Push your code to the `main` branch. The included GitHub Action will automatically generate the `wrangler.toml` and deploy the service.
+   Push your code to the `main` branch. The included GitHub Action will automatically generate the `wrangler.toml`, prepare local assets (fonts, styles), and deploy the service.
 
 3. **Local Development**:
    ```bash
    npm install
+   # Prepare local fonts and external styles
+   ./scripts/prepare-fonts.sh
    npx wrangler dev
    ```
 
 ## 📝 Usage
 
 ### Web Interface
-Access the root path `/` of your worker. Enter your `AUTH_TOKEN` in the top configuration bar to unlock the management features and select your preferred storage targets.
+Access the root path `/` of your worker. Enter your `AUTH_TOKEN` in the top configuration bar to unlock the management features. 
+
+**New in v1.1**:
+- **Dual-Pane Upload**: Drag files into the vacuum on the left and manage your pending queue on the right. 
+- **Additive Selection**: Add files in multiple batches before processing.
+- **Batch Removal**: Remove individual files from the pending list with a single click.
 
 ### API Integration
 **Endpoint**: `POST /api/upload` (Form Data) or `POST /api/convert` (JSON)  
@@ -74,9 +90,9 @@ Access the root path `/` of your worker. Enter your `AUTH_TOKEN` in the top conf
 *Note: The `storage` parameter supports string arrays, single strings, or comma-separated values.*
 
 ## 🎨 Design Philosophy
-Tinge adheres to the **Chronicle Design System**, prioritizing typography, negative space, and subtle micro-interactions to create a premium "print-on-screen" experience.
+Tinge adheres to the **Chronicle Design System**, prioritizing typography, negative space, and a chromatic austerity (one accent color). It utilizes local font hosting and modular CSS to maintain a premium, performant, and privacy-respecting profile.
 
 ---
 
 > [!IMPORTANT]
-> Ensure the `tinge` R2 bucket is bound correctly. The deployment workflow handles this via the dynamic `wrangler.toml` generation using the `tinge` binding name.
+> The worker relies on the `R2_BINDING` variable to match the binding name in `src/index.ts`. By default, this is set to `tinge`. If you change the binding name in variables, ensure you also update the `Bindings` type in `src/index.ts`.
