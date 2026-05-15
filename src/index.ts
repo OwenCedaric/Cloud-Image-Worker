@@ -210,7 +210,7 @@ app.post('/api/upload', async (c) => {
         
         if (storageTargets.includes('github')) {
             ghItems.push({ filename, content: buffer });
-            outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${filename}`);
+            outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}.avif`);
         }
         results[file.name] = outputUrls.join(' | ');
     }
@@ -252,7 +252,7 @@ app.post('/api/convert', async (c) => {
             }
             if (storageTargets.includes('github')) {
                 ghItems.push({ filename, content: buffer });
-                outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${filename}`);
+                outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}.avif`);
             }
             results[url] = outputUrls.join(' | ');
         } catch (e: any) {
