@@ -63,12 +63,12 @@ jobs:
           mkdir -p public
           cat <<EOF > public/surge.sgmodule
           #!name=Cloud Image Worker Auth
-          #!desc=自动注入 Cloud-Image-Worker API 验证所需的 X-Worker-Auth Header
+          #!desc=自动注入 Cloud-Image-Worker API 验证所需的 Authorization Header
           #!category=Cloud-Image-Worker
           #!arguments=Auth:鉴权Token
 
           [Header Rewrite]
-          ^https?://$ESCAPED_DOMAIN/api/ header-add X-Worker-Auth {{{Auth}}}
+          ^https?://$ESCAPED_DOMAIN/api/ header-add Authorization "Bearer {{{Auth}}}"
 
           [MITM]
           hostname = %APPEND% $DOMAIN

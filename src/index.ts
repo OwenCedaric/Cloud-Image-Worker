@@ -24,6 +24,15 @@ const MINIMAL_ASSETS = {
     },
 };
 
+// Helper: Extract Auth Token
+function getAuthToken(c: any): string | undefined {
+    const authHeader = c.req.header('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        return authHeader.substring(7);
+    }
+    return undefined;
+}
+
 const app = new Hono<{ Bindings: Bindings }>()
 
 // Error Handlers
@@ -173,8 +182,8 @@ async function batchPushToGitHub(files: GitHubFile[], env: Bindings, commitMessa
 app.get('/', (c) => c.html(renderMinimalUI()))
 
 app.post('/api/upload', async (c) => {
-    const authHeader = c.req.header('X-Worker-Auth') || c.req.header('X-Access-Token')
-    if (c.env.AUTH_TOKEN && authHeader !== c.env.AUTH_TOKEN) {
+    const token = getAuthToken(c);
+    if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) {
         return c.json({ error: 'Unauthorized' }, 401)
     }
 
@@ -224,8 +233,8 @@ app.post('/api/upload', async (c) => {
 
 // Remote fetch and upload
 app.post('/api/convert', async (c) => {
-    const authHeader = c.req.header('X-Worker-Auth') || c.req.header('X-Access-Token')
-    if (c.env.AUTH_TOKEN && authHeader !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
+    const token = getAuthToken(c);
+    if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
 
     const { urls, storage } = await c.req.json();
     const storageTargets = Array.isArray(storage) ? storage : [storage];
@@ -266,8 +275,8 @@ app.post('/api/convert', async (c) => {
 
 // R2 Image Management
 app.get('/api/images', async (c) => {
-    const authHeader = c.req.header('X-Worker-Auth') || c.req.header('X-Access-Token')
-    if (c.env.AUTH_TOKEN && authHeader !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
+    const token = getAuthToken(c);
+    if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
     
     const list = await c.env.tinge.list({ limit: parseInt(c.req.query('limit') || '50', 10), cursor: c.req.query('cursor') || undefined });
     const baseUrl = formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN);
@@ -282,8 +291,8 @@ app.get('/api/images', async (c) => {
 });
 
 app.delete('/api/images', async (c) => {
-    const authHeader = c.req.header('X-Worker-Auth') || c.req.header('X-Access-Token')
-    if (c.env.AUTH_TOKEN && authHeader !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
+    const token = getAuthToken(c);
+    if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
     const { key } = await c.req.json();
     await c.env.tinge.delete(key);
     return c.json({ status: 'success' });

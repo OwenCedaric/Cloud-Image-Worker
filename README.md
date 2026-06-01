@@ -13,7 +13,7 @@ Tinge is a premium, high-performance image gateway designed for the Cloudflare e
     - Batch file uploads with drag-and-drop.
     - URL-based resource ingestion.
     - Integrated R2 asset manager (list, copy, delete).
-- 🔐 **Unified Security**: Robust token-based authentication (`X-Worker-Auth`) enforced across all API and management operations.
+- 🔐 **Unified Security**: Robust token-based authentication (`Authorization: Bearer <token>`) enforced across all API and management operations.
 - 🕸️ **Serverless Efficiency**: Built on the Hono framework and optimized for Cloudflare Workers' globally distributed edge.
 
 ## 🛠️ Configuration (GitHub Secrets)
@@ -25,7 +25,7 @@ To enable automated deployment via GitHub Actions, configure the following **Sec
 | :--- | :--- |
 | `CLOUDFLARE_API_TOKEN` | Your Cloudflare API Token with Workers/R2 permissions. |
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID. |
-| `AUTH_TOKEN` | Custom secret for API authentication (used in `X-Worker-Auth` header). |
+| `AUTH_TOKEN` | Custom secret for API authentication (used in `Authorization` header). |
 
 ### ⚙️ Environment Variables (GitHub Variables)
 In addition to secrets, you can configure these **Variables** (**Settings > Secrets and variables > Actions > Variables**):
@@ -78,7 +78,7 @@ Access the root path `/` of your worker. Enter your `AUTH_TOKEN` in the top conf
 
 ### API Integration
 **Endpoint**: `POST /api/upload` (Form Data) or `POST /api/convert` (JSON)  
-**Header**: `X-Worker-Auth: {YOUR_AUTH_TOKEN}`
+**Header**: `Authorization: Bearer {YOUR_AUTH_TOKEN}`
 
 #### JSON Payload Example (`/api/convert`):
 ```json

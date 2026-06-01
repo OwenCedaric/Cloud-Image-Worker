@@ -251,7 +251,7 @@
                     const lines = urlsEl.value.split('\n').map(l => l.trim()).filter(l => l !== '');
                     if (lines.length === 0) throw new Error('Input required');
                     const headers = { 'Content-Type': 'application/json' };
-                    if (token) headers['X-Worker-Auth'] = token;
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
                     const res = await fetch('/api/convert', {
                         method: 'POST',
                         headers: headers,
@@ -288,7 +288,7 @@
                         }
 
                         const headers = {};
-                        if (token) headers['X-Worker-Auth'] = token;
+                        if (token) headers['Authorization'] = `Bearer ${token}`;
                         const res = await fetch('/api/upload', {
                             method: 'POST',
                             headers: headers,
@@ -336,7 +336,7 @@
                 const url = new URL('/api/images', window.location.origin);
                 if (r2Cursor) url.searchParams.set('cursor', r2Cursor);
                 const headers = {};
-                if (token) headers['X-Worker-Auth'] = token;
+                if (token) headers['Authorization'] = `Bearer ${token}`;
                 const res = await fetch(url, { headers });
                 if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
                 const result = await res.json();
@@ -359,7 +359,7 @@
             if (!confirm(`Delete resource: ${key}?`)) return;
             const token = document.getElementById('authToken').value.trim();
             const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['X-Worker-Auth'] = token;
+            if (token) headers['Authorization'] = `Bearer ${token}`;
             try {
                 const res = await fetch('/api/images', { method: 'DELETE', headers, body: JSON.stringify({ key }) });
                 if (!res.ok) { let msg = `Error ${res.status}`; try { const d = await res.json(); msg = d.error || msg; } catch(e){} throw new Error(msg); }
