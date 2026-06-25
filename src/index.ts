@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import htmlContent from './assets/index.html'
+import { processImageToAvif } from './imageProcessor'
 
 type Bindings = {
     GH_TOKEN: string
@@ -212,14 +213,31 @@ app.post('/api/upload', async (c) => {
         const outputUrls: string[] = [];
 
         if (storageTargets.includes('r2')) {
-            const key = filename;
-            await c.env.tinge.put(key, buffer, { httpMetadata: { contentType: file.type } });
+            let r2Buffer = buffer;
+            let r2Ext = ext;
+            let r2ContentType = file.type || 'application/octet-stream';
+
+            if (!r2ContentType.includes('svg') && r2ContentType.startsWith('image/')) {
+                try {
+                    r2Buffer = await processImageToAvif(buffer, r2ContentType);
+                    r2Ext = '.avif';
+                    r2ContentType = 'image/avif';
+                } catch (e) {
+                    console.error("Image conversion failed, falling back to original:", e);
+                }
+            }
+
+            const r2HashBuffer = await crypto.subtle.digest('SHA-256', r2Buffer);
+            const r2Hash = Array.from(new Uint8Array(r2HashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+            const key = `${r2Hash}${r2Ext}`;
+
+            await c.env.tinge.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
             outputUrls.push(`${formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN)}/${key}`);
         }
         
         if (storageTargets.includes('github')) {
             ghItems.push({ filename, content: buffer });
-            outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}.avif`);
+            outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
         }
         results[file.name] = outputUrls.join(' | ');
     }
@@ -255,13 +273,30 @@ app.post('/api/convert', async (c) => {
             const outputUrls: string[] = [];
 
             if (storageTargets.includes('r2')) {
-                const key = filename;
-                await c.env.tinge.put(key, buffer, { httpMetadata: { contentType: contentType || 'image/jpeg' } });
+                let r2Buffer = buffer;
+                let r2Ext = ext;
+                let r2ContentType = contentType || 'application/octet-stream';
+
+                if (!r2ContentType.includes('svg') && r2ContentType.startsWith('image/')) {
+                    try {
+                        r2Buffer = await processImageToAvif(buffer, r2ContentType);
+                        r2Ext = '.avif';
+                        r2ContentType = 'image/avif';
+                    } catch (e) {
+                        console.error("Image conversion failed, falling back to original:", e);
+                    }
+                }
+
+                const r2HashBuffer = await crypto.subtle.digest('SHA-256', r2Buffer);
+                const r2Hash = Array.from(new Uint8Array(r2HashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+                const key = `${r2Hash}${r2Ext}`;
+
+                await c.env.tinge.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
                 outputUrls.push(`${formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN)}/${key}`);
             }
             if (storageTargets.includes('github')) {
                 ghItems.push({ filename, content: buffer });
-                outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}.avif`);
+                outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
             }
             results[url] = outputUrls.join(' | ');
         } catch (e: any) {
