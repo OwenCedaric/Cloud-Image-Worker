@@ -1,4 +1,4 @@
-name: Deploy Images to Cloudflare Pages
+name: Deploy Images to Cloudflare Assets Worker
 
 on:
   push:
@@ -19,6 +19,7 @@ on:
       - '*.avif'
       - '*.gif'
       - '*.svg'
+      - '.github/workflows/image.yml'
   workflow_dispatch:
 
 permissions:
