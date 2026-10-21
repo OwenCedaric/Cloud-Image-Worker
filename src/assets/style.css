@@ -96,7 +96,71 @@ button#processBtn:hover svg { transform: translateX(4px); }
 .result-label { font-size: var(--font-micro); color: var(--secondary-ink); margin-bottom: 8px; font-weight: 300; overflow-wrap: break-word; }
 .result-link { color: var(--primary-ink); font-weight: 500; text-decoration: none; font-size: var(--font-auxiliary); display: flex; flex-direction: column; gap: 8px; word-break: break-all; }
 .link-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 4px 0; }
-.copy-trigger { color: var(--accent); font-weight: 600; cursor: pointer; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+.copy-trigger { 
+    color: var(--accent); 
+    font-weight: 600; 
+    cursor: pointer; 
+    flex-shrink: 0; 
+    font-size: 10px; 
+    text-transform: uppercase; 
+    letter-spacing: 0.1em; 
+    padding: 2px 8px; 
+    border-radius: 2px; 
+    border: 1px solid transparent; 
+    transition: all 0.2s ease; 
+    user-select: none; 
+}
+.copy-trigger:hover { 
+    background: var(--subtle-fill); 
+    border-color: var(--subtle-border); 
+}
+.copy-trigger.copied { 
+    color: var(--primary-ink); 
+    background: var(--subtle-fill); 
+    border-color: var(--accent); 
+}
+
+/* Toast Interactive Feedback */
+.toast {
+    position: fixed;
+    top: 28px;
+    left: 50%;
+    transform: translate(-50%, -12px);
+    background: var(--base-surface);
+    color: var(--primary-ink);
+    border: 1px solid var(--stroke-tint);
+    padding: 8px 18px;
+    border-radius: 2px;
+    font-size: var(--font-micro);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 28px rgba(61, 68, 81, 0.14);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s;
+    z-index: 10000;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
+}
+.toast.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+}
+.toast .toast-icon {
+    color: var(--accent);
+    font-size: 13px;
+    line-height: 1;
+    display: inline-block;
+}
+.toast .toast-msg {
+    line-height: 1.4;
+}
 
 .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 32px; width: 100%; }
 .asset-card { background: var(--base-surface); border: 1px solid var(--subtle-border); padding: 16px; border-radius: 2px; transition: transform 0.3s; display: flex; flex-direction: column; gap: 12px; }

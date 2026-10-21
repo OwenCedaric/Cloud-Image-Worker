@@ -112,7 +112,7 @@
             <section class="results-area" id="resultsArea">
                 <div class="results-header">
                     <h2>Generated Links</h2>
-                    <button class="btn-text" onclick="copyAll()">Copy All</button>
+                    <button class="btn-text" onclick="copyAll(this)">Copy All</button>
                 </div>
                 <div class="result-list" id="resultList"></div>
             </section>
@@ -122,6 +122,11 @@
             <div class="coda-text">End of Movement</div>
             <div class="coda-anchor">CIW</div>
         </footer>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite">
+        <span class="toast-icon">✦</span>
+        <span class="toast-msg">Link copied to clipboard</span>
     </div>
 
     <!-- Processing Libraries via Module System -->
@@ -321,7 +326,7 @@
                                     if (targetR2 && !targetGithub) label = 'R2';
                                     else if (targetGithub && !targetR2) label = 'GH';
                                 }
-                                linksHtml += `<div class="link-row"><div style="display: flex; gap: 8px; align-items: center;"><span style="font-size: 9px; color: var(--secondary-ink); border: 1px solid var(--subtle-border); padding: 0 4px; border-radius: 1px;">${label}</span><a href="${link}" target="_blank" style="color: inherit; text-decoration: none;">${link}</a></div><span class="copy-trigger" onclick="copyText('${link}')">COPY</span></div>`;
+                                linksHtml += `<div class="link-row"><div style="display: flex; gap: 8px; align-items: center;"><span style="font-size: 9px; color: var(--secondary-ink); border: 1px solid var(--subtle-border); padding: 0 4px; border-radius: 1px;">${label}</span><a href="${link}" target="_blank" style="color: inherit; text-decoration: none;">${link}</a></div><span class="copy-trigger" onclick="copyText(this, '${link}')">COPY</span></div>`;
                             });
                         }
                         item.innerHTML = `<div class="result-label">${input}</div><div class="result-bubble"><div class="result-link">${linksHtml}</div></div>`;
@@ -340,7 +345,6 @@
             const countEl = document.getElementById('assetCount');
             const pagination = document.getElementById('pagination');
             if (!loadMore) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">Retrieving records...</div>'; r2Cursor = null; }
-            if (!loadMore) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">Retrieving records...</div>'; r2Cursor = null; }
             try {
                 const url = new URL('/api/images', window.location.origin);
                 if (r2Cursor) url.searchParams.set('cursor', r2Cursor);
@@ -354,7 +358,7 @@
                     result.data.objects.forEach(obj => {
                         const card = document.createElement('div');
                         card.className = 'asset-card';
-                        card.innerHTML = `<div class="asset-preview"><img src="${obj.url}" loading="lazy"></div><div class="asset-info"><div class="asset-key">${obj.key}</div><div>Size: ${(obj.size / 1024).toFixed(1)} KB</div><div>Date: ${new Date(obj.uploaded).toLocaleDateString()}</div></div><div class="asset-actions"><span class="btn-text" onclick="copyText('${obj.url}')">Copy URL</span><span class="btn-delete" onclick="deleteAsset('${obj.key}')">Delete</span></div>`;
+                        card.innerHTML = `<div class="asset-preview"><img src="${obj.url}" loading="lazy"></div><div class="asset-info"><div class="asset-key">${obj.key}</div><div>Size: ${(obj.size / 1024).toFixed(1)} KB</div><div>Date: ${new Date(obj.uploaded).toLocaleDateString()}</div></div><div class="asset-actions"><span class="btn-text" onclick="copyText(this, '${obj.url}')">Copy URL</span><span class="btn-delete" onclick="deleteAsset('${obj.key}')">Delete</span></div>`;
                         grid.appendChild(card);
                     });
                     r2Cursor = result.data.cursor;
@@ -376,9 +380,143 @@
             } catch (e) { alert(e.message); }
         }
 
-        function copyText(text) { navigator.clipboard.writeText(text).then(() => { const trigger = event.target; const originalText = trigger.innerText; trigger.innerText = 'COPIED'; setTimeout(() => { if (trigger) trigger.innerText = originalText; }, 1500); }); }
-        function copyAll() { const links = Array.from(resultList.querySelectorAll('a')).map(a => a.href).join('\n'); navigator.clipboard.writeText(links).then(() => { const btn = event.target; const originalText = btn.innerText; btn.innerText = 'ALL COPIED'; setTimeout(() => btn.innerText = originalText, 1500); }); }
+        let toastTimer = null;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            const msgEl = toast.querySelector('.toast-msg') || toast;
+            msgEl.innerText = message;
+            toast.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+
+        async function copyText(triggerOrText, maybeText) {
+            let trigger = null;
+            let text = '';
+
+            if (typeof triggerOrText === 'string') {
+                text = triggerOrText;
+                if (typeof window !== 'undefined' && window.event && window.event.target) {
+                    trigger = window.event.target;
+                }
+            } else if (triggerOrText instanceof HTMLElement) {
+                trigger = triggerOrText;
+                text = maybeText || trigger.getAttribute('data-clipboard-text') || '';
+            } else if (triggerOrText && triggerOrText.target) {
+                trigger = triggerOrText.target;
+                text = maybeText || '';
+            }
+
+            if (!text && trigger) {
+                text = trigger.innerText;
+            }
+
+            let success = false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                    success = true;
+                } else {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    textArea.style.top = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    success = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                }
+            } catch (e) {
+                console.error('Clipboard copy failed:', e);
+                try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    textArea.style.top = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    success = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                } catch (err2) {
+                    console.error('Fallback copy failed:', err2);
+                    success = false;
+                }
+            }
+
+            if (success) {
+                if (trigger) {
+                    const originalText = trigger.innerText;
+                    trigger.innerText = 'COPIED';
+                    trigger.classList.add('copied');
+                    setTimeout(() => {
+                        if (trigger) {
+                            trigger.innerText = originalText;
+                            trigger.classList.remove('copied');
+                        }
+                    }, 1500);
+                }
+                showToast('Link copied to clipboard');
+            } else {
+                showToast('Failed to copy to clipboard');
+            }
+        }
+
+        async function copyAll(triggerEl) {
+            const btn = (triggerEl instanceof HTMLElement) ? triggerEl : (window.event?.target || document.querySelector('.results-header .btn-text'));
+            const links = Array.from(resultList.querySelectorAll('a')).map(a => a.href).join('\n');
+            if (!links) {
+                showToast('No links available to copy');
+                return;
+            }
+
+            let success = false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(links);
+                    success = true;
+                } else {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = links;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    textArea.style.top = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    success = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                }
+            } catch (e) {
+                console.error('Copy all failed:', e);
+            }
+
+            if (success) {
+                if (btn) {
+                    const originalText = btn.innerText;
+                    btn.innerText = 'ALL COPIED';
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        if (btn) {
+                            btn.innerText = originalText;
+                            btn.classList.remove('copied');
+                        }
+                    }, 1500);
+                }
+                showToast('All links copied to clipboard');
+            } else {
+                showToast('Failed to copy links');
+            }
+        }
         window.setTab = setTab;
+        window.copyText = copyText;
+        window.copyAll = copyAll;
     </script>
 </body>
 </html>
