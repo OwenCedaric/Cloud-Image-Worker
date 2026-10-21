@@ -1,0 +1,223 @@
+name: Deploy Images to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - images
+    paths:
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.png'
+      - '**/*.webp'
+      - '**/*.avif'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '*.jpg'
+      - '*.jpeg'
+      - '*.png'
+      - '*.webp'
+      - '*.avif'
+      - '*.gif'
+      - '*.svg'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  convert-organize-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-image-processing
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies for AVIF conversion
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pillow>=10.0.0" pillow-avif-plugin pillow-heif
+
+      - name: Convert and Organize Images
+        run: |
+          cat << 'EOF' > organize.py
+          import os
+          import shutil
+          from pathlib import Path
+          from PIL import Image, ImageOps
+
+          try:
+              import pillow_avif
+          except ImportError:
+              pass
+
+          try:
+              import pillow_heif
+              pillow_heif.register_heif_opener()
+          except Exception:
+              pass
+
+          TARGET_PER_FOLDER = 200
+          IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.svg'}
+          CONVERT_EXTS = {'.jpg', '.jpeg', '.png', '.webp'}
+          UNWANTED_NAMES = {'.ds_store', 'thumbs.db', 'desktop.ini', 'index.html'}
+
+          print("=== Phase 1: Format conversion to AVIF ===")
+          for path in list(Path('.').rglob('*')):
+              if not path.is_file():
+                  continue
+              if any(part in {'.git', 'node_modules', 'public_deploy', '.github'} for part in path.parts):
+                  continue
+              
+              if path.suffix.lower() in CONVERT_EXTS:
+                  try:
+                      print(f"Converting {path} to AVIF...")
+                      img = Image.open(path)
+                      try:
+                          img = ImageOps.exif_transpose(img)
+                      except Exception:
+                          pass
+                      
+                      if img.mode not in ("RGB", "RGBA"):
+                          if "transparency" in img.info or img.mode in ("RGBA", "LA", "PA"):
+                              img = img.convert("RGBA")
+                          else:
+                              img = img.convert("RGB")
+                      
+                      out_path = path.with_suffix('.avif')
+                      if out_path.exists() and out_path.resolve() != path.resolve():
+                          counter = 1
+                          while out_path.exists():
+                              out_path = path.with_name(f"{path.stem}_{counter}.avif")
+                              counter += 1
+                      
+                      img.save(out_path, format='AVIF', quality=85)
+                      print(f"Successfully converted to {out_path}")
+                      path.unlink()
+                  except Exception as e:
+                      print(f"Failed to convert {path}: {e}, keeping original.")
+
+          print("\n=== Phase 2: Cleanup unwanted files ===")
+          for p in list(Path('.').rglob('*')):
+              if p.is_file() and p.name.lower() in UNWANTED_NAMES:
+                  print(f"Removing unwanted file: {p}")
+                  p.unlink()
+
+          print("\n=== Phase 3: Identify files to organize ===")
+          numbered_dirs = sorted([int(p.name) for p in Path('.').iterdir() if p.is_dir() and p.name.isdigit()])
+          pending_images = []
+          folder_counts = {}
+
+          for d_num in numbered_dirs:
+              d_path = Path(str(d_num))
+              files = sorted([f for f in d_path.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTS])
+              if len(files) > TARGET_PER_FOLDER:
+                  excess = files[TARGET_PER_FOLDER:]
+                  print(f"Directory {d_num} has {len(files)} files (> {TARGET_PER_FOLDER}), queueing {len(excess)} to move.")
+                  pending_images.extend(excess)
+                  folder_counts[d_num] = TARGET_PER_FOLDER
+              else:
+                  folder_counts[d_num] = len(files)
+
+          for p in list(Path('.').rglob('*')):
+              if not p.is_file() or p.suffix.lower() not in IMAGE_EXTS:
+                  continue
+              if any(part in {'.git', 'node_modules', 'public_deploy', '.github'} for part in p.parts):
+                  continue
+              
+              rel_parts = p.relative_to('.').parts
+              if len(rel_parts) == 2 and rel_parts[0].isdigit():
+                  continue
+              if p not in pending_images:
+                  pending_images.append(p)
+
+          print(f"Total pending images to organize: {len(pending_images)}")
+
+          print("\n=== Phase 4: Distribute into directories with capacity (< 200) ===")
+          if pending_images:
+              current_max = max(folder_counts.keys()) if folder_counts else 0
+
+              for img_path in pending_images:
+                  target_num = None
+                  for d_num in sorted(folder_counts.keys()):
+                      if folder_counts[d_num] < TARGET_PER_FOLDER:
+                          target_num = d_num
+                          break
+                  
+                  if target_num is None:
+                      current_max += 1
+                      target_num = current_max
+                      folder_counts[target_num] = 0
+                      Path(str(target_num)).mkdir(exist_ok=True)
+                  
+                  target_dir = Path(str(target_num))
+                  target_path = target_dir / img_path.name
+                  
+                  counter = 1
+                  while target_path.exists() and target_path.resolve() != img_path.resolve():
+                      target_path = target_dir / f"{img_path.stem}_{counter}{img_path.suffix}"
+                      counter += 1
+                  
+                  if target_path.resolve() != img_path.resolve():
+                      shutil.move(str(img_path), str(target_path))
+                      print(f"Moved {img_path} -> {target_path}")
+                  
+                  folder_counts[target_num] += 1
+
+          print("\n=== Phase 5: Cleanup empty directories ===")
+          for p in list(Path('.').iterdir()):
+              if p.is_dir() and p.name not in {'.git', '.github', 'node_modules', 'public_deploy'}:
+                  for sub in list(p.rglob('*'))[::-1]:
+                      if sub.is_dir() and not any(sub.iterdir()):
+                          sub.rmdir()
+                  if not any(p.iterdir()):
+                      print(f"Removing empty directory: {p}")
+                      p.rmdir()
+
+          print("=== Organization Complete ===")
+          EOF
+          python organize.py
+          rm organize.py
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: convert to AVIF and organize images [skip ci]"
+            git pull --rebase origin images || true
+            git push origin images
+          fi
+
+      - name: Flatten Files for Deployment
+        run: |
+          echo "Creating a flattened directory for Cloudflare Pages deployment..."
+          mkdir public_deploy
+          
+          # 使用 cp -lf（硬链接强制模式），拍平阶段不发生磁盘数据复制，零额外磁盘 IO
+          find . -type f \( -iname "*.avif" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.gif" -o -iname "*.html" -o -iname "*.svg" \) -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "./public_deploy/*" -exec cp -lf {} public_deploy/ \;
+          echo "Flatten layout complete."
+          
+      - name: Deploy Image Assets Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --name=${{ vars.IMAGE_ASSETS_NAME || 'cloud-image-assets' }} --assets=public_deploy --compatibility-date=2024-03-24
