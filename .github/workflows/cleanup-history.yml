@@ -1,0 +1,53 @@
+name: Cleanup Image Git History
+
+on:
+  schedule:
+    - cron: '33 3 3 * *' # Run monthly on the 3rd at 03:33 UTC
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch to squash and reset history'
+        required: true
+        default: 'images'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Image Storage Branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch || vars.GH_BRANCH || 'images' }}
+          token: ${{ github.token }}
+          fetch-depth: 1
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Cleanup History
+        run: |
+          TARGET_BRANCH="${{ inputs.target_branch || vars.GH_BRANCH || 'images' }}"
+          echo "Target branch to squash: $TARGET_BRANCH"
+          
+          # Safety check: Never force-squash the main branch!
+          if [ "$TARGET_BRANCH" = "main" ]; then
+            echo "Error: Safety check triggered! Will not squash 'main' codebase branch."
+            exit 1
+          fi
+
+          # 创建一个没有历史记录的孤儿分支
+          git checkout --orphan temporary_branch
+          
+          # 添加当前所有文件
+          git add -A
+          
+          # 提交作为新的初始提交
+          git commit -m "chore(history): reset $TARGET_BRANCH branch history to single commit [skip ci]"
+          
+          # 将该孤儿分支强制推送到目标图片分支，从而重置远程历史
+          git push origin temporary_branch:$TARGET_BRANCH --force

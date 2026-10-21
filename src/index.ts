@@ -6,12 +6,18 @@ type Bindings = {
     GH_TOKEN: string
     GH_REPO: string
     GH_USER: string
-    IMAGE_DOMAIN: string
+    GH_BRANCH?: string
     AUTH_TOKEN: string
-    WORKER_DOMAIN: string
-    // Tinge Bindings
-    tinge: R2Bucket
-    PUBLIC_URL: string
+    DOMAIN?: string
+    IMAGE_ASSETS?: Fetcher
+    IMAGE_DOMAIN?: string
+    WORKER_DOMAIN?: string
+    PUBLIC_URL?: string
+    // R2 Bindings
+    R2?: R2Bucket
+    R2_BUCKET?: R2Bucket
+    BUCKET?: R2Bucket
+    [key: string]: any
 }
 
 const MINIMAL_ASSETS = {
@@ -42,7 +48,53 @@ app.onError((err, c) => {
     return c.json({ error: err.message || 'Internal Server Error' }, 500);
 });
 
-app.notFound((c) => {
+app.notFound(async (c) => {
+    if (c.req.method === 'GET') {
+        const url = new URL(c.req.url);
+        const path = url.pathname.slice(1);
+
+        // 1. Check R2 storage if configured
+        const r2 = getR2Bucket(c.env);
+        if (r2 && path) {
+            try {
+                const object = await r2.get(path);
+                if (object) {
+                    const headers = new Headers();
+                    object.writeHttpMetadata(headers);
+                    headers.set('etag', object.httpEtag);
+                    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+                    return new Response(object.body, { headers });
+                }
+            } catch (e) {
+                console.error('Failed to get object from R2:', e);
+            }
+        }
+
+        // 2. Fall back to IMAGE_ASSETS Service Binding
+        if (c.env.IMAGE_ASSETS) {
+            try {
+                // 1. Try exact requested path (e.g., /fc2a8c1c651bc43b.avif)
+                let res = await c.env.IMAGE_ASSETS.fetch(c.req.raw);
+
+                // 2. If 404 and path had folders (e.g. /9/abc.avif), try flattened root path (/abc.avif)
+                if (res.status === 404 && url.pathname.includes('/')) {
+                    const filename = url.pathname.split('/').pop();
+                    if (filename) {
+                        const flatReq = new Request(`https://internal/${filename}`, c.req.raw);
+                        res = await c.env.IMAGE_ASSETS.fetch(flatReq);
+                    }
+                }
+
+                if (res.status !== 404) {
+                    const newRes = new Response(res.body, res);
+                    newRes.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+                    return newRes;
+                }
+            } catch (e) {
+                console.error('Failed to proxy via Service Binding IMAGE_ASSETS:', e);
+            }
+        }
+    }
     return c.json({ error: 'Route not found' }, 404);
 });
 
@@ -66,6 +118,35 @@ function formatBaseUrl(url: string): string {
         return trimmed;
     }
     return `https://${trimmed}`;
+}
+
+// Helper: Get base domain URL
+function getBaseDomainUrl(cOrEnv: any): string {
+    if (cOrEnv && cOrEnv.req && cOrEnv.req.url) {
+        try {
+            const origin = new URL(cOrEnv.req.url).origin;
+            if (origin && origin !== 'null') {
+                return origin;
+            }
+        } catch {}
+    }
+    const env = cOrEnv?.env || cOrEnv || {};
+    const raw = env.DOMAIN || env.IMAGE_DOMAIN || env.WORKER_DOMAIN || env.PUBLIC_URL || '';
+    return formatBaseUrl(raw);
+}
+
+// Helper: Resolve R2 Bucket dynamically
+function getR2Bucket(env: any): R2Bucket | undefined {
+    if (env.R2) return env.R2;
+    if (env.R2_BUCKET) return env.R2_BUCKET;
+    if (env.BUCKET) return env.BUCKET;
+    for (const key of Object.keys(env)) {
+        const val = env[key];
+        if (val && typeof val.put === 'function' && typeof val.get === 'function' && typeof val.list === 'function') {
+            return val as R2Bucket;
+        }
+    }
+    return undefined;
 }
 
 // Helper: Get extension from Content-Type
@@ -128,17 +209,27 @@ async function batchPushToGitHub(files: GitHubFile[], env: Bindings, commitMessa
         'Content-Type': 'application/json'
     };
     const baseUrl = `https://api.github.com/repos/${env.GH_USER}/${env.GH_REPO}`;
-    let branch = 'main';
-    try {
-        const repoRes = await fetch(baseUrl, { headers });
-        if (repoRes.ok) {
-            const rData: any = await repoRes.json();
-            if (rData.default_branch) branch = rData.default_branch;
-        }
-    } catch { }
+    let branch = env.GH_BRANCH || 'images';
+    if (!env.GH_BRANCH) {
+        try {
+            const repoRes = await fetch(baseUrl, { headers });
+            if (repoRes.ok) {
+                const rData: any = await repoRes.json();
+                if (rData.default_branch) branch = rData.default_branch;
+            }
+        } catch { }
+    }
 
     const refRes = await fetch(`${baseUrl}/git/refs/heads/${branch}`, { headers });
-    if (!refRes.ok) throw new Error(`GitHub Auth/Ref Error: ${refRes.status}`);
+    if (!refRes.ok) {
+        if (refRes.status === 404) {
+            throw new Error(`Target branch "${branch}" not found in repository ${env.GH_USER}/${env.GH_REPO}. Please initialize the branch first.`);
+        }
+        if (refRes.status === 401 || refRes.status === 403) {
+            throw new Error(`GitHub auth failed (HTTP ${refRes.status}). Please check GH_TOKEN permissions.`);
+        }
+        throw new Error(`GitHub Auth/Ref Error: ${refRes.status}`);
+    }
     const refData: any = await refRes.json();
     const latestCommitSha = refData.object.sha;
 
@@ -194,6 +285,15 @@ app.post('/api/upload', async (c) => {
 
     if (storageTargets.length === 0) return c.json({ error: 'No storage target' }, 400);
 
+    const r2 = storageTargets.includes('r2') ? getR2Bucket(c.env) : undefined;
+    if (storageTargets.includes('r2') && !r2) {
+        return c.json({ error: 'R2 storage is not configured or bound to this Worker' }, 500);
+    }
+
+    if (storageTargets.includes('github') && (!c.env.GH_TOKEN || !c.env.GH_USER || !c.env.GH_REPO)) {
+        return c.json({ error: 'GitHub storage configuration is incomplete (GH_TOKEN, GH_USER, GH_REPO required)' }, 400);
+    }
+
     const files: File[] = [];
     for (const key in formData) {
         const val = formData[key];
@@ -212,7 +312,7 @@ app.post('/api/upload', async (c) => {
         const filename = `${hash}${ext}`;
         const outputUrls: string[] = [];
 
-        if (storageTargets.includes('r2')) {
+        if (storageTargets.includes('r2') && r2) {
             let r2Buffer = buffer;
             let r2Ext = ext;
             let r2ContentType = file.type || 'application/octet-stream';
@@ -231,13 +331,13 @@ app.post('/api/upload', async (c) => {
             const r2Hash = Array.from(new Uint8Array(r2HashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
             const key = `${r2Hash}${r2Ext}`;
 
-            await c.env.tinge.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
-            outputUrls.push(`${formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN)}/${key}`);
+            await r2.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
+            outputUrls.push(`${getBaseDomainUrl(c)}/${key}`);
         }
         
         if (storageTargets.includes('github')) {
             ghItems.push({ filename, content: buffer });
-            outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
+            outputUrls.push(`${getBaseDomainUrl(c)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
         }
         results[file.name] = outputUrls.join(' | ');
     }
@@ -256,6 +356,13 @@ app.post('/api/convert', async (c) => {
 
     const { urls, storage } = await c.req.json();
     const storageTargets = Array.isArray(storage) ? storage : [storage];
+    const r2 = storageTargets.includes('r2') ? getR2Bucket(c.env) : undefined;
+    if (storageTargets.includes('r2') && !r2) {
+        return c.json({ error: 'R2 storage is not configured or bound to this Worker' }, 500);
+    }
+    if (storageTargets.includes('github') && (!c.env.GH_TOKEN || !c.env.GH_USER || !c.env.GH_REPO)) {
+        return c.json({ error: 'GitHub storage configuration is incomplete (GH_TOKEN, GH_USER, GH_REPO required)' }, 400);
+    }
     const results: Record<string, string> = {};
     const ghItems: GitHubFile[] = [];
 
@@ -272,7 +379,7 @@ app.post('/api/convert', async (c) => {
             const filename = `${hash}${ext}`;
             const outputUrls: string[] = [];
 
-            if (storageTargets.includes('r2')) {
+            if (storageTargets.includes('r2') && r2) {
                 let r2Buffer = buffer;
                 let r2Ext = ext;
                 let r2ContentType = contentType || 'application/octet-stream';
@@ -291,12 +398,12 @@ app.post('/api/convert', async (c) => {
                 const r2Hash = Array.from(new Uint8Array(r2HashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
                 const key = `${r2Hash}${r2Ext}`;
 
-                await c.env.tinge.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
-                outputUrls.push(`${formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN)}/${key}`);
+                await r2.put(key, r2Buffer, { httpMetadata: { contentType: r2ContentType } });
+                outputUrls.push(`${getBaseDomainUrl(c)}/${key}`);
             }
             if (storageTargets.includes('github')) {
                 ghItems.push({ filename, content: buffer });
-                outputUrls.push(`${formatBaseUrl(c.env.IMAGE_DOMAIN)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
+                outputUrls.push(`${getBaseDomainUrl(c)}/${hash}${ext === '.svg' ? '.svg' : '.avif'}`);
             }
             results[url] = outputUrls.join(' | ');
         } catch (e: any) {
@@ -313,8 +420,11 @@ app.get('/api/images', async (c) => {
     const token = getAuthToken(c);
     if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
     
-    const list = await c.env.tinge.list({ limit: parseInt(c.req.query('limit') || '50', 10), cursor: c.req.query('cursor') || undefined });
-    const baseUrl = formatBaseUrl(c.env.PUBLIC_URL || c.env.IMAGE_DOMAIN);
+    const r2 = getR2Bucket(c.env);
+    if (!r2) return c.json({ error: 'R2 storage is not configured or bound' }, 500);
+
+    const list = await r2.list({ limit: parseInt(c.req.query('limit') || '50', 10), cursor: c.req.query('cursor') || undefined });
+    const baseUrl = getBaseDomainUrl(c);
     
     return c.json({
         status: 'success',
@@ -328,8 +438,11 @@ app.get('/api/images', async (c) => {
 app.delete('/api/images', async (c) => {
     const token = getAuthToken(c);
     if (c.env.AUTH_TOKEN && token !== c.env.AUTH_TOKEN) return c.json({ error: 'Unauthorized' }, 401)
+    const r2 = getR2Bucket(c.env);
+    if (!r2) return c.json({ error: 'R2 storage is not configured or bound' }, 500);
+
     const { key } = await c.req.json();
-    await c.env.tinge.delete(key);
+    await r2.delete(key);
     return c.json({ status: 'success' });
 });
 

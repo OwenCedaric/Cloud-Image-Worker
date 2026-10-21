@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <style>
+    :root {
+      --bg: #3d4451;
+      --star: #fbf9f6;
+      --accent: #82a1b9;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #22262e;
+        --star: #fbf9f6;
+        --accent: #9bbcd4;
+      }
+    }
+  </style>
+  <rect width="32" height="32" rx="7.5" fill="var(--bg)"/>
+  <circle cx="24" cy="8" r="2.2" fill="var(--accent)"/>
+  <path d="M16 6 Q16 16 6 16 Q16 16 16 26 Q16 16 26 16 Q16 16 16 6 Z" fill="var(--star)"/>
+</svg>

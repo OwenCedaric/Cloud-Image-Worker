@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud Image Worker</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
     <!-- Importing Noto Sans SC and Noto Serif SC -->
     <link rel="stylesheet" href="/fonts.css">
     <link rel="stylesheet" href="/style.css">
@@ -309,9 +311,16 @@
                         const outputLinks = output.split(' | ').map(link => link.trim());
                         let linksHtml = isError ? `<span style="color: #EF4444;">${output}</span>` : '';
                         if (!isError) {
-                            outputLinks.forEach(link => {
-                                const isR2 = link.includes('/images/');
-                                const label = isR2 ? 'R2' : 'GH';
+                            outputLinks.forEach((link, idx) => {
+                                let label = 'IMG';
+                                if (outputLinks.length === 2) {
+                                    label = idx === 0 ? 'R2' : 'GH';
+                                } else {
+                                    const targetR2 = document.getElementById('targetR2').checked;
+                                    const targetGithub = document.getElementById('targetGithub').checked;
+                                    if (targetR2 && !targetGithub) label = 'R2';
+                                    else if (targetGithub && !targetR2) label = 'GH';
+                                }
                                 linksHtml += `<div class="link-row"><div style="display: flex; gap: 8px; align-items: center;"><span style="font-size: 9px; color: var(--secondary-ink); border: 1px solid var(--subtle-border); padding: 0 4px; border-radius: 1px;">${label}</span><a href="${link}" target="_blank" style="color: inherit; text-decoration: none;">${link}</a></div><span class="copy-trigger" onclick="copyText('${link}')">COPY</span></div>`;
                             });
                         }

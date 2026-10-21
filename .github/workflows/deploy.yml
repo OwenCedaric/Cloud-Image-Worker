@@ -23,60 +23,96 @@ jobs:
         
       - name: Build Deployment Assets
         run: |
-          # 1. Prepare common variables
-          DOMAIN="${{ secrets.WORKER_DOMAIN }}"
-          # shellcheck disable=SC2001
-          ESCAPED_DOMAIN=$(echo "$DOMAIN" | sed 's/\./\\./g')
+          # 1. Resolve domain(s) cleanly from vars
+          RAW_DOMAINS="${{ vars.DOMAINS || vars.DOMAIN || secrets.DOMAIN || vars.WORKER_DOMAIN || secrets.WORKER_DOMAIN || vars.IMAGE_DOMAIN || secrets.IMAGE_DOMAIN }}"
+          if [ -z "$RAW_DOMAINS" ]; then
+            echo "Error: DOMAIN variable is required (e.g. image.example.com or image.example.com, tinge.example.com)"
+            exit 1
+          fi
+
+          # Parse multiple domains (comma or space separated)
+          CLEAN_DOMAINS=()
+          for d in $(echo "$RAW_DOMAINS" | tr ',' ' '); do
+            cdomain=$(echo "$d" | sed -e 's|^https\?://||' -e 's|/.*$||' | xargs)
+            if [ -n "$cdomain" ]; then
+              CLEAN_DOMAINS+=("$cdomain")
+            fi
+          done
+
+          PRIMARY_DOMAIN="${CLEAN_DOMAINS[0]}"
           
-          # 2. Generate wrangler.toml
-          cat <<EOF > wrangler.toml
-          name = "${{ vars.WORKER_NAME || 'cloud-image-worker' }}"
-          main = "src/index.ts"
-          compatibility_date = "2024-03-24"
+          GH_USER="${{ vars.GH_USER || secrets.GH_USER || github.repository_owner }}"
+          GH_REPO="${{ vars.GH_REPO || secrets.GH_REPO || github.event.repository.name }}"
+          GH_BRANCH="${{ vars.GH_BRANCH || secrets.GH_BRANCH || 'images' }}"
+          WORKER_NAME="${{ vars.WORKER_NAME || 'tinge' }}"
+          IMAGE_ASSETS_NAME="${{ vars.IMAGE_ASSETS_NAME || 'tinge-assets' }}"
 
-          [[r2_buckets]]
-          binding = "${{ vars.R2_BINDING || 'tinge' }}"
-          bucket_name = "${{ vars.R2_BUCKET || 'tinge' }}"
+          R2_BUCKET="${{ vars.R2_BUCKET || secrets.R2_BUCKET }}"
 
-          [vars]
-          GH_USER = "${{ secrets.GH_USER }}"
-          GH_REPO = "${{ secrets.GH_REPO }}"
-          IMAGE_DOMAIN = "${{ secrets.IMAGE_DOMAIN }}"
-          WORKER_DOMAIN = "$DOMAIN"
-          PUBLIC_URL = "${{ secrets.PUBLIC_URL }}"
-
-          [[routes]]
-          pattern = "$DOMAIN"
-          custom_domain = true
-          
-          [assets]
-          directory = "./public"
-
-          [[rules]]
-          type = "CompiledWasm"
-          globs = ["**/*.wasm"]
-          fallbacks = []
-          fallthrough = true
-          EOF
-
-          # 3. Generate Surge module in public/
-          mkdir -p public
-          cat <<EOF > public/surge.sgmodule
-          #!name=Cloud Image Worker Auth
-          #!desc=自动注入 Cloud-Image-Worker API 验证所需的 Authorization Header
-          #!category=Cloud-Image-Worker
-          #!arguments=Auth:鉴权Token
-
-          [Header Rewrite]
-          ^https?://$ESCAPED_DOMAIN/api/ header-add Authorization "Bearer {{{Auth}}}"
-
-          [MITM]
-          hostname = %APPEND% $DOMAIN
-          EOF
-
-          # 4. Prepare local assets
+          # 2. Ensure public directory exists
           mkdir -p public/fonts
+
+          # 3. Generate wrangler.toml cleanly
+          {
+            echo "name = \"$WORKER_NAME\""
+            echo "main = \"src/index.ts\""
+            echo "compatibility_date = \"2024-03-24\""
+            echo ""
+            for d in "${CLEAN_DOMAINS[@]}"; do
+              echo "[[routes]]"
+              echo "pattern = \"$d\""
+              echo "custom_domain = true"
+              echo ""
+            done
+            echo "[[services]]"
+            echo "binding = \"IMAGE_ASSETS\""
+            echo "service = \"$IMAGE_ASSETS_NAME\""
+            echo ""
+            echo "[vars]"
+            echo "GH_USER = \"$GH_USER\""
+            echo "GH_REPO = \"$GH_REPO\""
+            echo "GH_BRANCH = \"$GH_BRANCH\""
+            echo "DOMAIN = \"https://$PRIMARY_DOMAIN\""
+            echo "IMAGE_DOMAIN = \"https://$PRIMARY_DOMAIN\""
+            echo "WORKER_DOMAIN = \"$PRIMARY_DOMAIN\""
+            echo ""
+            if [ -n "$R2_BUCKET" ]; then
+              echo "[[r2_buckets]]"
+              echo "binding = \"R2\""
+              echo "bucket_name = \"$R2_BUCKET\""
+              echo ""
+            fi
+            echo "[assets]"
+            echo "directory = \"./public\""
+            echo ""
+            echo "[[rules]]"
+            echo "type = \"CompiledWasm\""
+            echo "globs = [\"**/*.wasm\"]"
+            echo "fallbacks = []"
+            echo "fallthrough = true"
+          } > wrangler.toml
+
+          # 4. Generate Surge module in public/
+          {
+            echo "#!name=Tinge Auth"
+            echo "#!desc=自动注入 Tinge API 验证所需的 Authorization Header"
+            echo "#!category=Tinge"
+            echo "#!arguments=Auth:鉴权Token"
+            echo ""
+            echo "[Header Rewrite]"
+            for d in "${CLEAN_DOMAINS[@]}"; do
+              escaped_d=$(echo "$d" | sed 's/\./\\./g')
+              echo "^https?://$escaped_d/api/ header-add Authorization \"Bearer {{{Auth}}}\""
+            done
+            echo ""
+            echo "[MITM]"
+            MITM_HOSTS=$(echo "${CLEAN_DOMAINS[*]}" | sed 's/ /, /g')
+            echo "hostname = %APPEND% $MITM_HOSTS"
+          } > public/surge.sgmodule
+
+          # 5. Prepare local assets
           cp src/assets/style.css public/style.css
+          cp src/assets/favicon.* public/ 2>/dev/null || true
           cp node_modules/@fontsource/noto-sans-sc/files/* public/fonts/
           cp node_modules/@fontsource/noto-serif-sc/files/* public/fonts/
           
@@ -86,10 +122,11 @@ jobs:
           sed -i 's|\./files/|/fonts/|g' public/fonts.css
 
       - name: Deploy to Cloudflare
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
           secrets: |
             GH_TOKEN
             AUTH_TOKEN

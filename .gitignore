@@ -29,6 +29,4 @@ node_modules/
 # Generated Assets
 src/assets/surge-module.ts
 wrangler.toml
-public/fonts/
-public/fonts.css
-public/surge.sgmodule
+public/

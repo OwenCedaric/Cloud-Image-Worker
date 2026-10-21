@@ -1,6 +1,7 @@
 #!/bin/bash
 mkdir -p public/fonts
 cp src/assets/style.css public/style.css
+cp src/assets/favicon.* public/ 2>/dev/null || true
 
 # Copy font files
 cp node_modules/@fontsource/noto-sans-sc/files/* public/fonts/
